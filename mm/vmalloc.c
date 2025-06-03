@@ -665,7 +665,8 @@ EXPORT_SYMBOL_GPL(is_vmalloc_or_module_addr);
  * return the tail page that corresponds to the base page address, which
  * matches small vmap mappings.
  */
-struct page *vmalloc_to_page(const void *vmalloc_addr)
+#pragma clang optimize off
+struct page *    vmalloc_to_page(const void *vmalloc_addr)
 {
 	unsigned long addr = (unsigned long) vmalloc_addr;
 	struct page *page = NULL;
@@ -720,7 +721,7 @@ struct page *vmalloc_to_page(const void *vmalloc_addr)
 	return page;
 }
 EXPORT_SYMBOL(vmalloc_to_page);
-
+#pragma clang optimize on
 /*
  * Map a vmalloc()-space virtual address to the physical page frame number.
  */

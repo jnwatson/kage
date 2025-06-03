@@ -7,6 +7,8 @@
 # and produce insane amounts of uninteresting coverage.
 KCOV_INSTRUMENT_main.o := n
 
+CFLAGS := -save-temps
+
 obj-y += main.o
 obj-y += strict_rwx.o
 obj-y += kmod.o

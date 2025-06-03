@@ -115,6 +115,7 @@ subsys_initcall(module_init_limits);
 void *module_alloc(unsigned long size)
 {
 	void *p = NULL;
+        pr_info("module_alloc %lxu\n", size);
 
 	/*
 	 * Where possible, prefer to allocate within direct branch range of the

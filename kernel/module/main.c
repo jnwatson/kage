@@ -57,6 +57,7 @@
 #include <linux/audit.h>
 #include <linux/cfi.h>
 #include <linux/debugfs.h>
+#include <linux/kage.h>
 #include <uapi/linux/module.h>
 #include "internal.h"
 
@@ -377,6 +378,7 @@ static inline void __percpu *mod_percpu(struct module *mod)
 
 static int percpu_modalloc(struct module *mod, struct load_info *info)
 {
+  // FIXME: do we need to specially allocate.  What use percpu allocation?
 	Elf_Shdr *pcpusec = &info->sechdrs[info->index.pcpu];
 	unsigned long align = pcpusec->sh_addralign;
 
@@ -1254,13 +1256,26 @@ static void free_mod_mem(struct module *mod)
 
 		/* Free lock-classes; relies on the preceding sync_rcu(). */
 		lockdep_free_key_range(mod_mem->base, mod_mem->size);
-		if (mod_mem->size)
-			module_memory_free(mod_mem->base, type);
+		if (mod_mem->size) {
+#ifdef CONFIG_SECURITY_KAGE
+                        if (!mod->kage)
+#endif
+			        module_memory_free(mod_mem->base, type);
+                }
 	}
 
 	/* MOD_DATA hosts mod, so free it at last */
 	lockdep_free_key_range(mod->mem[MOD_DATA].base, mod->mem[MOD_DATA].size);
+#ifdef CONFIG_SECURITY_KAGE
+        if (!mod->kage) {
+#endif
 	module_memory_free(mod->mem[MOD_DATA].base, MOD_DATA);
+#ifdef CONFIG_SECURITY_KAGE
+        } else {
+                // This frees all the module memory
+		kage_free(mod->kage);
+	}
+#endif
 }
 
 /* Free a module, remove from lists, etc. */
@@ -2269,6 +2284,18 @@ static int move_module(struct module *mod, struct load_info *info)
 	void *ptr;
 	enum mod_mem_type t = 0;
 	int ret = -ENOMEM;
+#ifdef CONFIG_SECURITY_KAGE
+	struct kage * kage = 0;
+
+
+	if (info->is_lfi) {
+		kage = kage_create();
+		if (!kage) {
+			return PTR_ERR(kage);
+		}
+		mod->kage = kage;
+	}
+#endif
 
 	for_each_mod_mem_type(type) {
 		if (!mod->mem[type].size) {
@@ -2276,7 +2303,16 @@ static int move_module(struct module *mod, struct load_info *info)
 			continue;
 		}
 		mod->mem[type].size = PAGE_ALIGN(mod->mem[type].size);
-		ptr = module_memory_alloc(mod->mem[type].size, type);
+#ifdef CONFIG_SECURITY_KAGE
+		if (!kage) {
+#endif
+		        ptr = module_memory_alloc(mod->mem[type].size, type);
+#ifdef CONFIG_SECURITY_KAGE
+		}
+		else {
+		        ptr = kage_memory_alloc(kage, mod->mem[type].size, type);
+		}
+#endif
 		/*
                  * The pointer to these blocks of memory are stored on the module
                  * structure and we keep that around so long as the module is
@@ -2336,8 +2372,18 @@ static int move_module(struct module *mod, struct load_info *info)
 
 	return 0;
 out_enomem:
-	for (t--; t >= 0; t--)
-		module_memory_free(mod->mem[t].base, t);
+#ifdef CONFIG_SECURITY_KAGE
+	if (!kage) {
+#endif
+		for (t--; t >= 0; t--) {
+			module_memory_free(mod->mem[t].base, t);
+		}
+#ifdef CONFIG_SECURITY_KAGE
+	} 
+	else {
+		kage_memory_free_all(kage);
+	}
+#endif
 	return ret;
 }
 
@@ -2442,6 +2488,15 @@ static struct module *layout_and_allocate(struct load_info *info, int flags)
 	if (ndx)
 		info->sechdrs[ndx].sh_flags |= SHF_RO_AFTER_INIT;
 
+#ifdef CONFIG_SECURITY_KAGE
+	// FIXME: find a better indicator for LFI-compiled
+	ndx = find_sec(info, "__lfi");
+	if (ndx) {
+		pr_info("Loadable module is compiled LFI\n");
+		info->is_lfi = true;
+	}
+#endif
+
 	/*
 	 * Determine total sizes, and put offsets in sh_entsize.  For now
 	 * this is done generically; there doesn't appear to be any
@@ -2489,6 +2544,8 @@ static int post_relocation(struct module *mod, const struct load_info *info)
 	/* Setup kallsyms-specific fields. */
 	add_kallsyms(mod, info);
 
+	// FIXME: this is where LFI verification should go
+
 	/* Arch-specific module finalizing. */
 	return module_finalize(info->hdr, info->sechdrs, mod);
 }
@@ -2496,6 +2553,7 @@ static int post_relocation(struct module *mod, const struct load_info *info)
 /* Call module constructors. */
 static void do_mod_ctors(struct module *mod)
 {
+//LFI: FIXME: need to go through LFI runtime
 #ifdef CONFIG_CONSTRUCTORS
 	unsigned long i;
 
@@ -2510,6 +2568,9 @@ struct mod_initfree {
 	void *init_text;
 	void *init_data;
 	void *init_rodata;
+#ifdef CONFIG_SECURITY_KAGE
+        struct kage * kage;
+#endif
 };
 
 static void do_free_init(struct work_struct *w)
@@ -2523,9 +2584,19 @@ static void do_free_init(struct work_struct *w)
 
 	llist_for_each_safe(pos, n, list) {
 		initfree = container_of(pos, struct mod_initfree, node);
-		module_memfree(initfree->init_text);
-		module_memfree(initfree->init_data);
-		module_memfree(initfree->init_rodata);
+#ifdef CONFIG_SECURITY_KAGE
+                if (initfree->kage) {
+                        kage_memory_free(initfree->kage, initfree->init_text);
+                        kage_memory_free(initfree->kage, initfree->init_data);
+                        kage_memory_free(initfree->kage, initfree->init_rodata);
+                }
+                else
+#endif
+                {
+                        module_memfree(initfree->init_text);
+                        module_memfree(initfree->init_data);
+                        module_memfree(initfree->init_rodata);
+                }
 		kfree(initfree);
 	}
 }
@@ -2572,11 +2643,19 @@ static noinline int do_init_module(struct module *mod)
 	freeinit->init_text = mod->mem[MOD_INIT_TEXT].base;
 	freeinit->init_data = mod->mem[MOD_INIT_DATA].base;
 	freeinit->init_rodata = mod->mem[MOD_INIT_RODATA].base;
+#if CONFIG_SECURITY_KAGE
+        freeinit->kage = mod->kage;
+#endif
 
 	do_mod_ctors(mod);
 	/* Start the module */
 	if (mod->init != NULL)
+#if CONFIG_SECURITY_KAGE
+		ret = do_one_initcall2(mod->kage, mod->init);
+#else
 		ret = do_one_initcall(mod->init);
+#endif
+
 	if (ret < 0) {
 		goto fail_free_freeinit;
 	}
