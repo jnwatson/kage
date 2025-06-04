@@ -5,15 +5,9 @@
 
 #include "arm64.h"
 
-
-extern uint64_t lfi_proc_entry(struct LFIProc* proc, void** kstackp) asm ("lfi_proc_entry");
 extern uint64_t lfi_asm_invoke(struct LFIProc* proc, void* fn, void** kstackp) asm ("lfi_asm_invoke");
-extern void lfi_asm_proc_exit(void* kstackp, uint64_t code) asm ("lfi_asm_proc_exit");
-extern void lfi_syscall_entry(void) asm ("lfi_syscall_entry");
-extern void lfi_ret(void) asm ("lfi_ret");
 
-static uintptr_t
-procaddr(uintptr_t base, uintptr_t addr)
+unsigned long procaddr(unsigned long base, unsigned long addr)
 {
     return base | ((uint32_t) addr);
 }
@@ -24,30 +18,36 @@ proc_validate(struct LFIProc* proc)
     uint64_t* r;
 
     // base
-    wr_regs_base(&proc->regs, proc->base);
+    wr_regs_base(&proc->regs, proc->kage->base);
 
     // address registers
     int n = 0;
     while ((r = regs_addr(&proc->regs, n++)))
-        *r = procaddr(proc->base, *r);
-
-    // sys register (if used for this arch)
-    if ((r = regs_sys(&proc->regs)))
-        *r = (uintptr_t) proc->kage->sys;
+        *r = procaddr(proc->kage->base, *r);
 }
 
 void
 lfi_proc_init(struct LFIProc* proc, struct kage * kage, uintptr_t entry, uintptr_t sp, uint32_t idx)
 {
     proc->kage = kage;
+
+    // Place the LFIProc's index at the base of the stack
     sp -= 4;
-    *((uint32_t *)sp) = idx;
+    *((uint32_t *)(sp + kage->base)) = idx;
     sp -= 12;  // to maintain ABI 16-byte stack frame alignment
+
     regs_init(&proc->regs, entry, sp);
 
     proc_validate(proc);
 }
 
+#if 0
+uint64_t
+lfi_proc_start(struct LFIProc* proc)
+{
+    return lfi_proc_entry(proc, &proc->kstackp);
+}
+#endif
 
 uint64_t
 lfi_proc_invoke(struct LFIProc* proc, void* fn, void* ret)
@@ -61,6 +61,7 @@ lfi_proc_invoke(struct LFIProc* proc, void* fn, void* ret)
 #endif
     return lfi_asm_invoke(proc, fn, &proc->kstackp);
 }
+
 #if 0
 static void
 syssetup(LFISys* table, struct LFIProc* proc)

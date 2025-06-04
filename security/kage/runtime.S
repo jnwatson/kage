@@ -9,6 +9,7 @@
 // Places the pointer to the active LFIProc in x21.
 .macro GET_PROC
 
+// Assumes syspage (base of sandbox) in x21
 // FIXME: remove magic numbers
 // Find the base of the stack (highest address) and load index into kage->procs
 //    The stack is 8KiB (0x2000) aligned. We find the top of the 8KiB block
@@ -17,18 +18,13 @@
     and   x22, x22, #~0x1FFF              // Clear the lower 13 bits to get the base address of the *next* 8KiB block
     ldr   w22, [x22, #-4]                 // Load the 32-bit index from the last 4 bytes of the current stack block.
                                           // w22 now holds the index; the upper 32 bits of x22 are zeroed.
+// Check if the index is out of bounds (>= 8).
+    cmp   w22, #8
+    b.ge  1f
 
-// Find the base of the 4GiB sandbox and load kage->procs
-// The region is 4GiB (0x100000000) aligned. Its base is found by clearing the lower 32 bits of SP.
-    mov   x21, sp
-    and   x21, x21, #~0xFFFFFFFF          // Clear the lower 32 bits of the value in x21 to get the region's base address.
-    ldr   x21, [x21]                      // Load kage->procs[x21]
+    ldr   x21, [x21, #2048]                      // Load LFISys->procs
 
-// 3. Check if the index is out of bounds (>= 8).
-    cmp   w22, #8                         // Compare the index (in w22) with 8.
-    b.ge  1f                 // If index is greater than or equal to 8, branch to the handler.
-
-// Load kage->procs[i] into x21
+// Load LFISys->procs[i] into x21
     ldr   x21, [x21, x22, LSL #3]
     b     2f
 
@@ -75,11 +71,12 @@
 .endm
 
 // Accelerated return for library sandboxes.
+// called from sandbox
 .p2align 4
 .globl lfi_ret
 lfi_ret:
 	GET_PROC
-	// restore kernel stack
+	// restore kernel stack from LFIProc.kstackp
 	ldr x22, [x21]
 	mov sp, x22
 	// restore callee-saved registers
@@ -89,21 +86,15 @@ lfi_ret:
 	ldp x23, x24, [sp], 16
 	ldp x21, x22, [sp], 16
 	ldp x19, x20, [sp], 16
-	ldp d14, d15, [sp], 16
-	ldp d12, d13, [sp], 16
-	ldp d10, d11, [sp], 16
-	ldp d8, d9,   [sp], 16
-	br x30
+	ldp x18, x18, [sp], 16
+	ret
 
 // lfi_asm_invoke(Proc* p, void* fn, void** kstackp)
 .p2align 4
 .globl lfi_asm_invoke
 lfi_asm_invoke:
 	// save callee-saved registers to stack
-	stp d8, d9,   [sp, #-16]!
-	stp d10, d11, [sp, #-16]!
-	stp d12, d13, [sp, #-16]!
-	stp d14, d15, [sp, #-16]!
+	stp x18, x18, [sp, #-16]!
 	stp x19, x20, [sp, #-16]!
 	stp x21, x22, [sp, #-16]!
 	stp x23, x24, [sp, #-16]!
@@ -118,15 +109,11 @@ lfi_asm_invoke:
 	br x22
 	brk #0
 
-// lfi_proc_entry(Proc* p, void** kstackp)
+// lfi_proc_entry(LFIProc* p, void** kstackp)
 .p2align 4
 .globl lfi_proc_entry
 lfi_proc_entry:
 	// save callee-saved registers to stack
-	//stp d8, d9,   [sp, #-16]!
-	//stp d10, d11, [sp, #-16]!
-	//stp d12, d13, [sp, #-16]!
-	//stp d14, d15, [sp, #-16]!
 	stp x19, x20, [sp, #-16]!
 	stp x21, x22, [sp, #-16]!
 	stp x23, x24, [sp, #-16]!
@@ -151,15 +138,11 @@ lfi_asm_proc_exit:
 	ldp x23, x24, [sp], 16
 	ldp x21, x22, [sp], 16
 	ldp x19, x20, [sp], 16
-	ldp d14, d15, [sp], 16
-	ldp d12, d13, [sp], 16
-	ldp d10, d11, [sp], 16
-	ldp d8, d9,   [sp], 16
 	ret
 
 .p2align 4
 .globl lfi_syscall_entry
-lfi_syscall_ertry:
+lfi_syscall_entry:
 	SAVE_PARTIAL_REGS
 	// x21 now contains Proc*
 	ldr x1, [x21]         // load stack

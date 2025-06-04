@@ -16,7 +16,7 @@ typedef uint64_t (*SysHandler)(uint64_t sysno, uint64_t, uint64_t, uint64_t, uin
 
 struct kage{
     struct page **pages; // ==NULL if kage unused
-    unsigned long start_vaddr;
+    unsigned long base;
     unsigned long *alloc_bitmap;
     unsigned long next_open_offs;
     struct LFIProc *procs[KAGE_MAX_PROCS];

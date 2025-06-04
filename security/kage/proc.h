@@ -48,28 +48,25 @@ typedef struct LFIRegs {
 
 struct LFIProc;
 
+
+// Warning: update GET_PROC in runtime.S if you change this.
 typedef struct LFISys {
-    struct LFIProc *(*procs)[];  // &kage->procs
     uintptr_t rtcalls[256];
-    //uintptr_t base;
-    void* proc;
+    struct LFIProc *(*procs)[];  // &kage->procs
 } LFISys;
 
 struct kage;
 struct LFIProc {
+    void * kstackp;  // This must be first as lfi_ret depends on it
     struct kage * kage;
-    void* kstackp;
     //void* tp;
     LFIRegs regs;
-    uintptr_t base;
-    void* stack;
-
-    //void* ctxp; 
 };
 
-void
-lfi_proc_init(struct LFIProc* proc, struct kage * kage, uintptr_t entry, uintptr_t sp,
-              uint32_t idx);
+// Entry and sp are relative to sandbox base
+void lfi_proc_init(struct LFIProc* proc, struct kage * kage, uintptr_t entry, uintptr_t sp, uint32_t idx);
+
+uint64_t lfi_proc_start(struct LFIProc* proc);
 
 void lfi_proc_free(struct LFIProc* proc);
 
@@ -81,3 +78,6 @@ uint64_t* lfi_regs_sysarg(LFIRegs* regs, int n);
 
 // lfi_regs_sysret returns the register used for system call return values.
 uint64_t* lfi_regs_sysret(LFIRegs* regs);
+
+uint64_t
+lfi_proc_invoke(struct LFIProc* proc, void* fn, void* ret);

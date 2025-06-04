@@ -24,12 +24,6 @@ regs_addr(LFIRegs* regs, int n)
     return NULL;
 }
 
-static uint64_t*
-regs_sys(LFIRegs* regs)
-{
-    return &regs->x25;
-}
-
 static void
 regs_init(LFIRegs* regs, uint64_t entry, uint64_t sp)
 {

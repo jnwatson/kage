@@ -34,9 +34,6 @@
 #define DOMAIN_SPAN (4UL * 1024 * 1024 * 1024) // 4GiB
 #define MAX_DOMAINS (VM_AREA_SIZE / DOMAIN_SPAN - 1)
 
-extern uint64_t lfi_proc_entry(struct LFIProc* proc, void** kstackp) asm ("lfi_proc_entry");
-extern uint64_t lfi_asm_invoke(struct LFIProc* proc, void* fn, void** kstackp) asm ("lfi_asm_invoke");
-extern void lfi_asm_proc_exit(void* kstackp, uint64_t code) asm ("lfi_asm_proc_exit");
 extern void lfi_syscall_entry(void) asm ("lfi_syscall_entry");
 extern void lfi_ret(void) asm ("lfi_ret");
 
@@ -53,8 +50,8 @@ static struct kage kages[MAX_DOMAINS] = {};
 
 // Returns true if compatible with LFI Spec 2.5 dense mode.
 bool is_valid_vaddr(struct kage const *kage, unsigned long addr, enum mod_mem_type type) {
-    unsigned long offset = addr - kage->start_vaddr;
-    if (addr < kage->start_vaddr)
+    unsigned long offset = addr - kage->base;
+    if (addr < kage->base)
             return false;
     if (offset < PAGE_SIZE + 80UL * 1024 || offset > DOMAIN_SPAN - 80UL * 1024)
             return false;
@@ -70,7 +67,7 @@ static void * kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
     // we get a failure
     unsigned long size = end - start;
     unsigned int nr_pages = size >> DOMAIN_PAGE_SHIFT;
-    unsigned long start_offset = start - kage->start_vaddr;
+    unsigned long start_offset = start - kage->base;
     unsigned long irq_flags;
     int i, err;
     void * ret = NULL;
@@ -116,7 +113,7 @@ cleanup:
 
 void * kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type)
 {
-    unsigned long start = ALIGN(kage->start_vaddr + kage->next_open_offs, 1<<DOMAIN_PAGE_SHIFT);
+    unsigned long start = ALIGN(kage->base + kage->next_open_offs, 1<<DOMAIN_PAGE_SHIFT);
     unsigned long end = ALIGN(start + size, 1<<DOMAIN_PAGE_SHIFT);
     size = end - start;
 
@@ -131,7 +128,7 @@ void * kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type)
     ret = kage_memory_alloc_explicit(kage, start, end, type, false);
     if (IS_ERR(ret))
              goto cleanup;
-    kage->next_open_offs = end - kage->start_vaddr;
+    kage->next_open_offs = end - kage->base;
 cleanup:
     spin_unlock_irqrestore(&lock, irq_flags);
     return ret;
@@ -145,7 +142,7 @@ static int kage_init(struct kage *kage)
     kage->pages = vzalloc(nr_pages * sizeof(*kage->pages));
     kage->alloc_bitmap = bitmap_zalloc(nr_pages, GFP_KERNEL);
     kage->next_open_offs = PAGE_SIZE + 80UL * 1024;
-    BUG_ON(!is_valid_vaddr(kage, kage->start_vaddr + kage->next_open_offs, MOD_TEXT));
+    BUG_ON(!is_valid_vaddr(kage, kage->base + kage->next_open_offs, MOD_TEXT));
     if (!kage->pages || !kage->alloc_bitmap) {
         vfree(kage->pages);
         kage->pages = 0;
@@ -163,14 +160,14 @@ static int kage_init(struct kage *kage)
 void kage_free(struct kage *kage, 
               unsigned long vaddr)
 {
-    unsigned long vaddr_offset = vaddr - kage->start_vaddr;
+    unsigned long vaddr_offset = vaddr - kage->base;
     unsigned long end = vaddr + size;
     unsigned int first_page = vaddr_offset >> DOMAIN_PAGE_SHIFT;
     unsigned int nr_pages = size >> DOMAIN_PAGE_SHIFT;
     unsigned long flags;
     int i;
 
-    if (vaddr_offset >= DOMAIN_SPAN || end > kage->start_vaddr + DOMAIN_SPAN) {
+    if (vaddr_offset >= DOMAIN_SPAN || end > kage->base + DOMAIN_SPAN) {
             WARN_ON(1);
             return;
     }
@@ -200,7 +197,7 @@ void kage_memory_free_all(struct kage *kage)
     unsigned int nr_pages = DOMAIN_SPAN >> DOMAIN_PAGE_SHIFT;
     int i;
 
-    vunmap_range(kage->start_vaddr, kage->start_vaddr + DOMAIN_SPAN);
+    vunmap_range(kage->base, kage->base + DOMAIN_SPAN);
     spin_lock_irqsave(&lock, flags);
     for_each_set_bit(i, kage->alloc_bitmap, nr_pages) {
         __free_pages(kage->pages[i], DOMAIN_PAGE_SHIFT - PAGE_SHIFT);
@@ -284,7 +281,7 @@ static void init_kages(void)
     unsigned long addr = ALIGN((unsigned long)vm_area->addr, DOMAIN_SPAN);
 
     for (int i=0; i < MAX_DOMAINS; i++) {
-      kages[i].start_vaddr = addr;
+      kages[i].base = addr;
     }
     addr += DOMAIN_SPAN;
     BUG_ON( addr > ((unsigned long)vm_area->addr + vm_area->size));
@@ -378,13 +375,13 @@ static uint64_t kage_syshandler(uint64_t sysno, uint64_t p0, uint64_t p1, uint64
 
 static void * setup_lfisys(struct kage *kage) {
     // FIXME: way too large an allocation
-    unsigned long lfisys_end = ALIGN((kage->start_vaddr + sizeof(LFISys)), 1<<DOMAIN_PAGE_SHIFT);
-    void * sysmem = kage_memory_alloc_explicit(kage, kage->start_vaddr, lfisys_end, MOD_DATA, true);
+    unsigned long lfisys_end = ALIGN((kage->base + sizeof(LFISys)), 1<<DOMAIN_PAGE_SHIFT);
+    void * sysmem = kage_memory_alloc_explicit(kage, kage->base, lfisys_end, MOD_DATA, true);
     if (IS_ERR(sysmem))
         return sysmem;
 
-    kage->sys = (struct LFISys *) kage->start_vaddr;
-    //kage->sys->rtcalls[0] = (uintptr_t) &lfi_syscall_entry;
+    kage->sys = (struct LFISys *) kage->base;
+    kage->sys->rtcalls[0] = (uintptr_t) &lfi_syscall_entry;
     kage->sys->procs = &kage->procs;
     //FIXME: mark LFISys as readonly
     return kage->sys;
@@ -438,13 +435,18 @@ static struct LFIProc *alloc_lfiproc(struct kage *kage){
         return lfiproc;
 }
 
+void do_ret(void) {
+        lfi_ret();
+}
+
+// Call a module init function
 int kage_call_init(struct kage *kage, initcall_t fn) {
         void * sb_stack = kage_memory_alloc(kage, 1 << KAGE_SANDBOX_STACK_ORDER, MOD_DATA);
         struct LFIProc * lfiproc = alloc_lfiproc(kage);
         int lfi_idx = (lfiproc - kage->procs[0]) / sizeof(struct LFIProc);
-
-        lfi_proc_init(lfiproc, kage, (int64_t)fn, (uintptr_t)sb_stack + KAGE_SANDBOX_STACK_SIZE, lfi_idx);
-        return fn();
+        unsigned long rel_stack_base = (uintptr_t)sb_stack + KAGE_SANDBOX_STACK_SIZE - kage->base;
+        lfi_proc_init(lfiproc, kage, (int64_t)fn - kage->base, rel_stack_base, lfi_idx);
+        return lfi_proc_invoke(lfiproc, fn, do_ret);
         //FIXME: free lfiproc
 }
 
