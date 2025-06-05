@@ -83,7 +83,7 @@ struct load_info {
 		unsigned int sym, str, mod, vers, info, pcpu;
 	} index;
 #ifdef CONFIG_SECURITY_KAGE
-        int is_lfi;
+        int lfi_offs;
 #endif
 
 };

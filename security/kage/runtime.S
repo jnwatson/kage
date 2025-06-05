@@ -14,18 +14,18 @@
 // Find the base of the stack (highest address) and load index into kage->procs
 //    The stack is 8KiB (0x2000) aligned. We find the top of the 8KiB block
 //    that SP is in, and then load the 32-bit word from the very top.
-    add   x22, sp, #0x2000                // Add the stack size to SP to guarantee we are in the next block
-    and   x22, x22, #~0x1FFF              // Clear the lower 13 bits to get the base address of the *next* 8KiB block
-    ldr   w22, [x22, #-4]                 // Load the 32-bit index from the last 4 bytes of the current stack block.
-                                          // w22 now holds the index; the upper 32 bits of x22 are zeroed.
+    add   x16, sp, #0x2000                // Add the stack size to SP to guarantee we are in the next block
+    and   x16, x16, #~0x1FFF              // Clear the lower 13 bits to get the base address of the *next* 8KiB block
+    ldr   w16, [x16, #-4]                 // Load the 32-bit index from the last 4 bytes of the current stack block.
+                                          // w16 now holds the index; the upper 32 bits of x16 are zeroed.
 // Check if the index is out of bounds (>= 8).
-    cmp   w22, #8
+    cmp   w16, #8
     b.ge  1f
 
     ldr   x21, [x21, #2048]                      // Load LFISys->procs
 
 // Load LFISys->procs[i] into x21
-    ldr   x21, [x21, x22, LSL #3]
+    ldr   x21, [x21, x16, LSL #3]
     b     2f
 
 1:
@@ -49,9 +49,6 @@
 	str x18,      [x21, PROC_REGS+16*9]
 	mov x1, sp
 	stp x30, x1,  [x21, PROC_REGS+16*15]
-	mrs x0, nzcv
-	mrs x1, fpsr
-	stp x0, x1, [x21, PROC_REGS+8*34]
 .endm
 
 .macro RESTORE_INVOKE_REGS
@@ -86,7 +83,7 @@ lfi_ret:
 	ldp x23, x24, [sp], 16
 	ldp x21, x22, [sp], 16
 	ldp x19, x20, [sp], 16
-	ldp x18, x18, [sp], 16
+	ldr x18,      [sp], 16
 	ret
 
 // lfi_asm_invoke(Proc* p, void* fn, void** kstackp)
@@ -94,7 +91,7 @@ lfi_ret:
 .globl lfi_asm_invoke
 lfi_asm_invoke:
 	// save callee-saved registers to stack
-	stp x18, x18, [sp, #-16]!
+	str x18, [sp, #-16]!
 	stp x19, x20, [sp, #-16]!
 	stp x21, x22, [sp, #-16]!
 	stp x23, x24, [sp, #-16]!
@@ -163,7 +160,6 @@ lfi_yield_entry:
 .p2align 4
 .globl lfi_restore_partial_regs
 lfi_restore_partial_regs:
-	ldp x1, x2, [x0, PROC_REGS+8*34]
 	ldp x2, x3,   [x0, PROC_REGS+16*1]
 	ldp x4, x5,   [x0, PROC_REGS+16*2]
 	ldp x6, x7,   [x0, PROC_REGS+16*3]
@@ -186,7 +182,6 @@ lfi_restore_partial_regs:
 .p2align 4
 .globl lfi_restore_regs
 lfi_restore_regs:
-	ldp x1, x2, [x0, PROC_REGS+8*34]
 	ldp x2, x3,   [x0, PROC_REGS+16*1]
 	ldp x4, x5,   [x0, PROC_REGS+16*2]
 	ldp x6, x7,   [x0, PROC_REGS+16*3]

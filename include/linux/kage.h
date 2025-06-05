@@ -26,6 +26,9 @@ struct kage{
 
     // Pointer to the base of the sandbox
     struct LFISys* sys;
+
+    // Where the instruction sequence to exit from sandbox lives (inside the sandbox)
+    unsigned long lfi_sec_addr;
 };
 
 void * kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type);

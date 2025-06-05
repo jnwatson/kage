@@ -26,7 +26,7 @@
 
 #include "proc.h"
 
-
+// FIXME for debug
 #pragma clang optimize off
 
 #define MODULE_NAME "kage"
@@ -369,7 +369,7 @@ static struct kage * alloc_kage(void)
 }
 
 static uint64_t kage_syshandler(uint64_t sysno, uint64_t p0, uint64_t p1, uint64_t p2, uint64_t p3, uint64_t p4, uint64_t p5) {
-  pr_info(MODULE_NAME "syshandler %llu\n", sysno);
+  pr_info(MODULE_NAME "syshandler %llx %llx %llx %llx %llx %llx %llx\n", sysno, p0, p1, p2, p3, p4, p5);
   return 0;
 }
 
@@ -382,6 +382,7 @@ static void * setup_lfisys(struct kage *kage) {
 
     kage->sys = (struct LFISys *) kage->base;
     kage->sys->rtcalls[0] = (uintptr_t) &lfi_syscall_entry;
+    kage->sys->rtcalls[3] = (uintptr_t) &lfi_ret;
     kage->sys->procs = &kage->procs;
     //FIXME: mark LFISys as readonly
     return kage->sys;
@@ -400,12 +401,12 @@ struct kage *kage_create(void) {
         kage = ERR_PTR(-ENOMEM);
         goto cleanup;
     }
-
     if ((err = kage_init(kage))) {
         kage = ERR_PTR(err);
         goto cleanup;
     }
     kage->syshandler = kage_syshandler;
+
 cleanup:
     spin_unlock_irqrestore(&lock, irq_flags);
     void * ret = setup_lfisys(kage);
@@ -435,10 +436,6 @@ static struct LFIProc *alloc_lfiproc(struct kage *kage){
         return lfiproc;
 }
 
-void do_ret(void) {
-        lfi_ret();
-}
-
 // Call a module init function
 int kage_call_init(struct kage *kage, initcall_t fn) {
         void * sb_stack = kage_memory_alloc(kage, 1 << KAGE_SANDBOX_STACK_ORDER, MOD_DATA);
@@ -446,8 +443,10 @@ int kage_call_init(struct kage *kage, initcall_t fn) {
         int lfi_idx = (lfiproc - kage->procs[0]) / sizeof(struct LFIProc);
         unsigned long rel_stack_base = (uintptr_t)sb_stack + KAGE_SANDBOX_STACK_SIZE - kage->base;
         lfi_proc_init(lfiproc, kage, (int64_t)fn - kage->base, rel_stack_base, lfi_idx);
-        return lfi_proc_invoke(lfiproc, fn, do_ret);
-        //FIXME: free lfiproc
+        lfi_proc_invoke(lfiproc, fn, (void *)(kage->lfi_sec_addr));
+        pr_info("kage_call_init finished\n");
+        // FIXME: free lfiproc
+        return 0; // FIXME: get rv from sandbox init
 }
 
 void kage_memory_free(struct kage *kage, void *vaddr) {
@@ -462,7 +461,7 @@ static struct dentry *my_debugfs_dir; // To hold our debugfs directory
 static ssize_t debugfs_trigger_write(struct file *debug_file_node,
                                    const char __user *user_buf,
                                    size_t count, loff_t *ppos) {
-    struct kage * kage;
+    //struct kage * kage;
     char *path_buf;
     struct file *target_file_ptr;
 
@@ -504,10 +503,10 @@ static ssize_t debugfs_trigger_write(struct file *debug_file_node,
         return PTR_ERR(target_file_ptr);
     }
 
-    kage = kage_create();
-    if (IS_ERR(kage)) {
-        pr_warn(MODULE_NAME ": create_kage failed with %ld\n", PTR_ERR(kage));
-    }
+    //kage = kage_create();
+    //if (IS_ERR(kage)) {
+    //    pr_warn(MODULE_NAME ": create_kage failed with %ld\n", PTR_ERR(kage));
+    //}
 
     // Close the file
     filp_close(target_file_ptr, NULL);
