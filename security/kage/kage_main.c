@@ -370,6 +370,14 @@ static struct kage * alloc_kage(void)
 
 static uint64_t kage_syshandler(uint64_t sysno, uint64_t p0, uint64_t p1, uint64_t p2, uint64_t p3, uint64_t p4, uint64_t p5) {
   pr_info(MODULE_NAME "syshandler %llx %llx %llx %llx %llx %llx %llx\n", sysno, p0, p1, p2, p3, p4, p5);
+  pr_info("p0 %s\n", (char *)p0);
+  pr_info("p1 %s\n", (char *)p1);
+  char * fmt = (char *)p0;
+  va_list * pargs = (va_list *)p1;
+  pr_info("before vprintk\n");
+  vprintk(fmt, *pargs);
+  pr_info("after vprintk\n");
+  
   return 0;
 }
 

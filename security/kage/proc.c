@@ -62,17 +62,6 @@ lfi_proc_invoke(struct LFIProc* proc, void* fn, void* ret)
     return lfi_asm_invoke(proc, fn, &proc->kstackp);
 }
 
-#if 0
-static void
-syssetup(LFISys* table, struct LFIProc* proc)
-{
-    table->rtcalls[0] = (uintptr_t) &lfi_syscall_entry;
-    table->rtcalls[1] = (uintptr_t) &lfi_ret;
-    table->base = proc->base;
-    table->proc = proc;
-}
-#endif
-
 // This function will be called from assembly.
 void lfi_syscall_handler(struct LFIProc* proc) asm ("lfi_syscall_handler");
 
