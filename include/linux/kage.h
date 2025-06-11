@@ -1,43 +1,48 @@
-#pragma once
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
+#ifndef _LINUX_KAGE_H
+#define _LINUX_KAGE_H
 
 #include <linux/types.h>
 #include <linux/module.h>
 
 // Assume 8k stack
 #define KAGE_SANDBOX_STACK_ORDER 13
-#define KAGE_SANDBOX_STACK_SIZE (1<<KAGE_SANDBOX_STACK_ORDER)
+#define KAGE_SANDBOX_STACK_SIZE (1 << KAGE_SANDBOX_STACK_ORDER)
 
 #define KAGE_MAX_PROCS 8
 
 struct LFIProc;
 struct LFISys;
 
-typedef uint64_t (*SysHandler)(uint64_t sysno, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+typedef uint64_t (*SysHandler)(uint64_t sysno, uint64_t, uint64_t, uint64_t,
+			       uint64_t, uint64_t, uint64_t);
 
-struct kage{
-    struct page **pages; // ==NULL if kage unused
-    unsigned long base;
-    unsigned long *alloc_bitmap;
-    unsigned long next_open_offs;
-    struct LFIProc *procs[KAGE_MAX_PROCS];
-    int open_proc_idx;
-    // User-provided runtime call handler.
-    SysHandler syshandler;
+struct kage {
+	struct page **pages; // ==NULL if kage unused
+	unsigned long base;
+	unsigned long *alloc_bitmap;
+	unsigned long next_open_offs;
+	struct LFIProc *procs[KAGE_MAX_PROCS];
+	int open_proc_idx;
+	// User-provided runtime call handler.
+	SysHandler syshandler;
 
-    // Pointer to the base of the sandbox
-    struct LFISys* sys;
+	// Pointer to the base of the sandbox
+	struct LFISys *sys;
 
-    // Where the instruction sequence to exit from sandbox lives (inside the sandbox)
-    unsigned long lfi_sec_addr;
+	// Where the instruction sequence to exit from sandbox lives (inside the
+	// sandbox)
+	unsigned long lfi_sec_addr;
 };
 
-void * kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type);
+void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type);
 void kage_memory_free_all(struct kage *kage);
 void kage_memory_free(struct kage *kage, void *vaddr);
 struct kage *kage_create(void);
-void kage_free(struct kage * kage);
+void kage_free(struct kage *kage);
 
 // Calls a modules's init function from within the sandbox and returns the
 // value returned from fn
 int kage_call_init(struct kage *kage, initcall_t fn);
 
+#endif /* _LINUX_KAGE_H */
