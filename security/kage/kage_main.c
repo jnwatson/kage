@@ -218,11 +218,13 @@ static void init_debugfs(void)
 {
 	my_debugfs_dir = debugfs_create_dir("kage", NULL);
 	if (IS_ERR_OR_NULL(my_debugfs_dir)) {
-		pr_warn("%s: Failed to create debugfs directory\n", MODULE_NAME);
+		pr_warn("%s: Failed to create debugfs directory\n",
+			MODULE_NAME);
 		my_debugfs_dir = NULL;
-	} else if (!debugfs_create_file("load", 0220, my_debugfs_dir,
-					NULL, &debugfs_trigger_fops)) {
-		pr_warn("%s: Failed to create debugfs file 'load'\n", MODULE_NAME);
+	} else if (!debugfs_create_file("load", 0220, my_debugfs_dir, NULL,
+					&debugfs_trigger_fops)) {
+		pr_warn("%s: Failed to create debugfs file 'load'\n",
+			MODULE_NAME);
 		debugfs_remove_recursive(my_debugfs_dir);
 		my_debugfs_dir = NULL;
 	} else {
@@ -366,13 +368,15 @@ static uint64_t kage_syshandler(uint64_t sysno, uint64_t p0, uint64_t p1,
 	pr_info("%s syshandler %llx %llx %llx %llx %llx %llx %llx\n",
 		MODULE_NAME, sysno, p0, p1, p2, p3, p4, p5);
 	if (sysno >= GUARD_NUM_SYSCALLS) {
-		pr_warn("%s invalid system call number %lld\n", MODULE_NAME, sysno);
+		pr_warn("%s invalid system call number %lld\n", MODULE_NAME,
+			sysno);
 		return -1;
 	}
 
 	f = syscall_to_guard[sysno];
 	if (!f) {
-		pr_warn("%s invalid system call number %lld\n", MODULE_NAME, sysno);
+		pr_warn("%s invalid system call number %lld\n", MODULE_NAME,
+			sysno);
 		return -1;
 	}
 	return f(p0, p1, p2, p3, p4, p5);
@@ -380,8 +384,8 @@ static uint64_t kage_syshandler(uint64_t sysno, uint64_t p0, uint64_t p1,
 
 static void *setup_lfisys(struct kage *kage)
 {
-	unsigned long lfisys_end =
-		ALIGN((kage->base + sizeof(struct LFISys)), 1 << DOMAIN_PAGE_SHIFT);
+	unsigned long lfisys_end = ALIGN((kage->base + sizeof(struct LFISys)),
+					 1 << DOMAIN_PAGE_SHIFT);
 	void *sysmem = kage_memory_alloc_explicit(kage, kage->base, lfisys_end,
 						  MOD_DATA, true);
 
@@ -477,7 +481,8 @@ static ssize_t debugfs_trigger_write(struct file *debug_file_node,
 	size_t slen;
 
 	if (*ppos != 0) {
-		pr_warn("%s: Partial write to debugfs not supported\n", MODULE_NAME);
+		pr_warn("%s: Partial write to debugfs not supported\n",
+			MODULE_NAME);
 		return -EINVAL;
 	}
 	if (count >= PAGE_SIZE) {
@@ -505,8 +510,8 @@ static ssize_t debugfs_trigger_write(struct file *debug_file_node,
 
 	target_file_ptr = filp_open(path_buf, O_RDONLY, 0);
 	if (IS_ERR(target_file_ptr)) {
-		pr_warn("%s: Failed to open file '%s': %ld\n",
-			MODULE_NAME, path_buf, PTR_ERR(target_file_ptr));
+		pr_warn("%s: Failed to open file '%s': %ld\n", MODULE_NAME,
+			path_buf, PTR_ERR(target_file_ptr));
 		kfree(path_buf);
 		return PTR_ERR(target_file_ptr);
 	}
