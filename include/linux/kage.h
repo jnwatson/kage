@@ -14,8 +14,11 @@
 struct LFIProc;
 struct LFISys;
 
-typedef uint64_t (*SysHandler)(uint64_t sysno, uint64_t, uint64_t, uint64_t,
-			       uint64_t, uint64_t, uint64_t);
+typedef uint64_t (*SysHandler)(struct kage *kage, uint64_t sysno, uint64_t,
+			       uint64_t, uint64_t, uint64_t, uint64_t,
+			       uint64_t);
+
+#include <linux/assoc_array.h>
 
 struct kage {
 	struct page **pages; // ==NULL if kage unused
@@ -32,7 +35,9 @@ struct kage {
 
 	// Where the instruction sequence to exit from sandbox lives (inside the
 	// sandbox)
-	unsigned long lfi_sec_addr;
+	unsigned long lfi_exit_addr;
+
+	struct assoc_array closures;
 };
 
 void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type);
@@ -44,5 +49,10 @@ void kage_free(struct kage *kage);
 // Calls a modules's init function from within the sandbox and returns the
 // value returned from fn
 int kage_call_init(struct kage *kage, initcall_t fn);
+
+// Calls any function in the sandbox and returns the result
+uint64_t kage_call(struct kage *kage, void * fn,
+              uint64_t p0, uint64_t p1, uint64_t p2,
+              uint64_t p3, uint64_t p4, uint64_t p5);
 
 #endif /* _LINUX_KAGE_H */

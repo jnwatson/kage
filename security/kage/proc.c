@@ -39,14 +39,17 @@ void lfi_proc_init(struct LFIProc *proc, struct kage *kage, uintptr_t entry,
 	proc_validate(proc);
 }
 
-uint64_t lfi_proc_invoke(struct LFIProc *proc, void *fn, void *ret)
+uint64_t lfi_proc_invoke(struct LFIProc *proc, void *fn, void *ret, 
+                         uint64_t p0, uint64_t p1, uint64_t p2, 
+                         uint64_t p3, uint64_t p4, uint64_t p5)
 {
-#if defined(__aarch64__) || defined(_M_ARM64)
+	*lfi_regs_sysarg(&proc->regs, 0) = p0;
+	*lfi_regs_sysarg(&proc->regs, 1) = p1;
+	*lfi_regs_sysarg(&proc->regs, 2) = p2;
+	*lfi_regs_sysarg(&proc->regs, 3) = p3;
+	*lfi_regs_sysarg(&proc->regs, 4) = p4;
+	*lfi_regs_sysarg(&proc->regs, 5) = p5;
 	proc->regs.x30 = (uintptr_t)ret;
-#elif defined(__x86_64__) || defined(_M_X64)
-	proc->regs.rsp -= 8;
-	*((void **)proc->regs.rsp) = ret;
-#endif
 	return lfi_asm_invoke(proc, fn, &proc->kstackp);
 }
 
@@ -61,7 +64,8 @@ void lfi_syscall_handler(struct LFIProc *proc)
 	uint64_t a3 = *lfi_regs_sysarg(&proc->regs, 3);
 	uint64_t a4 = *lfi_regs_sysarg(&proc->regs, 4);
 	uint64_t a5 = *lfi_regs_sysarg(&proc->regs, 5);
-	uint64_t ret = proc->kage->syshandler(sysno, a0, a1, a2, a3, a4, a5);
+	uint64_t ret =
+		proc->kage->syshandler(proc->kage, sysno, a0, a1, a2, a3, a4, a5);
 
 	*lfi_regs_sysret(&proc->regs) = ret;
 }

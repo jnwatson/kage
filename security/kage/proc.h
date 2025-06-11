@@ -79,6 +79,8 @@ uint64_t *lfi_regs_sysarg(LFIRegs *regs, int n);
 // lfi_regs_sysret returns the register used for system call return values.
 uint64_t *lfi_regs_sysret(LFIRegs *regs);
 
-uint64_t lfi_proc_invoke(struct LFIProc *proc, void *fn, void *ret);
+uint64_t lfi_proc_invoke(struct LFIProc *proc, void *fn, void *ret,
+                         uint64_t p0, uint64_t p1, uint64_t p2,
+                         uint64_t p3, uint64_t p4, uint64_t p5);
 
 #endif /* _KAGE_PROC_H */

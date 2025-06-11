@@ -17,16 +17,18 @@
 #include <asm/cacheflush.h>
 #include <asm/pgtable.h>
 
+#include "runtime.h"
 #include "proc.h"
 #include "guards.h"
-#include "kage.h"
 
 #define MODULE_NAME "kage"
 #define VM_AREA_SIZE (64UL * 1024 * 1024 * 1024)
 #define DOMAIN_SPAN (4UL * 1024 * 1024 * 1024)
 #define MAX_DOMAINS (VM_AREA_SIZE / DOMAIN_SPAN - 1)
 
-#define DOMAIN_PAGE_SHIFT PMD_SHIFT
+// To reduce PTE fragmentation, prefer PMD-sized allocations.
+// FIXME: This won't be appropriate for PAGE_SIZE > 4KiB, nor call stacks
+#define DOMAIN_PAGE_SHIFT PMD_SHIFT // 2MB pages
 int vmap_pages_range_noflush(unsigned long addr, unsigned long end,
 			     pgprot_t prot, struct page **pages,
 			     unsigned int page_shift);
@@ -36,6 +38,7 @@ spinlock_t lock;
 
 static struct kage kages[MAX_DOMAINS];
 
+// Returns true if compatible with LFI Spec 2.5 dense mode.
 bool is_valid_vaddr(struct kage const *kage, unsigned long addr,
 		    enum mod_mem_type type)
 {
@@ -55,6 +58,8 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 					unsigned long end,
 					enum mod_mem_type type, bool do_lock)
 {
+	// Keep track of all pages allocated just so we can undo the allocation if
+    // we get a failure
 	unsigned long size = end - start;
 	unsigned int nr_pages = size >> DOMAIN_PAGE_SHIFT;
 	unsigned long start_offset = start - kage->base;
@@ -67,6 +72,8 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 	if (!tmp_pages)
 		return ERR_PTR(-ENOMEM);
 
+	// FIXME: if we use this function in proxy/guard functions, we need a more
+    // fine-grained lock
 	if (do_lock)
 		spin_lock_irqsave(&lock, irq_flags);
 
@@ -83,6 +90,7 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 			kage->alloc_bitmap);
 	}
 
+	/* Map pages into VM area */
 	err = vmap_pages_range_noflush(start, end, PAGE_KERNEL, tmp_pages,
 				       DOMAIN_PAGE_SHIFT);
 	if (err)
@@ -131,8 +139,14 @@ cleanup:
 }
 EXPORT_SYMBOL(kage_memory_alloc);
 
+static void kage_free_closures(struct kage *kage)
+{
+	assoc_array_destroy(&kage->closures, NULL);
+}
+
 static int kage_init(struct kage *kage)
 {
+    /* Allocate tracking structures */
 	unsigned long nr_pages = VM_AREA_SIZE >> DOMAIN_PAGE_SHIFT;
 	int i;
 
@@ -151,6 +165,7 @@ static int kage_init(struct kage *kage)
 	for (i = 0; i < ARRAY_SIZE(kage->procs); i++)
 		kage->procs[i] = NULL;
 	kage->open_proc_idx = 0;
+	assoc_array_init(&kage->closures);
 	return 0;
 }
 
@@ -208,6 +223,7 @@ static ssize_t debugfs_trigger_write(struct file *debug_file_node,
 				     loff_t *ppos);
 
 static struct dentry *my_debugfs_dir;
+// File operations for our debugfs node
 static const struct file_operations debugfs_trigger_fops = {
 	.owner = THIS_MODULE,
 	.write = debugfs_trigger_write,
@@ -265,6 +281,7 @@ static int allocate_vmem(void)
 }
 #endif
 
+// Set the start addrs of the kage
 static void init_kages(void)
 {
 	unsigned long addr = ALIGN((unsigned long)vm_area->addr, DOMAIN_SPAN);
@@ -283,13 +300,16 @@ static int __init kagemodule_init(void)
 	unsigned long long kernel_addr;
 	struct page *page_ptr;
 	phys_addr_t phys_addr;
+    // Convert the struct page* obtained from the correct path to a physical address.
 	unsigned long vmalloc_start_addr, vmalloc_end_addr, vmalloc_size_bytes;
 
+	/* Initialize context */
 	init_debugfs();
 	pr_info("%s: kage_init\n", MODULE_NAME);
 
 	spin_lock_init(&lock);
 
+	/* Allocate VM area */
 	vm_area = get_vm_area(VM_AREA_SIZE, VM_ALLOC);
 	if (!vm_area)
 		return -ENOMEM;
@@ -339,6 +359,7 @@ static int __init kagemodule_init(void)
 	return 0;
 }
 
+// Find and return an unused kage in the kages array
 static struct kage *alloc_kage(void)
 {
 	struct kage *kage = NULL;
@@ -359,9 +380,9 @@ static struct kage *alloc_kage(void)
 	return kage;
 }
 
-static uint64_t kage_syshandler(uint64_t sysno, uint64_t p0, uint64_t p1,
-				uint64_t p2, uint64_t p3, uint64_t p4,
-				uint64_t p5)
+static uint64_t kage_syshandler(struct kage *kage, uint64_t sysno, uint64_t p0,
+				uint64_t p1, uint64_t p2, uint64_t p3,
+				uint64_t p4, uint64_t p5)
 {
 	guard_t *f;
 
@@ -379,7 +400,7 @@ static uint64_t kage_syshandler(uint64_t sysno, uint64_t p0, uint64_t p1,
 			sysno);
 		return -1;
 	}
-	return f(p0, p1, p2, p3, p4, p5);
+	return f(kage, p0, p1, p2, p3, p4, p5);
 }
 
 static void *setup_lfisys(struct kage *kage)
@@ -406,6 +427,8 @@ struct kage *kage_create(void)
 	unsigned long irq_flags;
 	void *ret;
 
+    // There's a remote chance that two calls can come in simultaneously, so
+    // serialize with a lock
 	spin_lock_irqsave(&lock, irq_flags);
 	kage = alloc_kage();
 	if (!kage) {
@@ -431,7 +454,7 @@ cleanup:
 }
 EXPORT_SYMBOL(kage_create);
 
-static struct LFIProc *alloc_lfiproc(struct kage *kage)
+static struct LFIProc *alloc_lfiproc(struct kage *kage, int *idx)
 {
 	int start_idx = kage->open_proc_idx;
 	struct LFIProc *lfiproc;
@@ -446,30 +469,48 @@ static struct LFIProc *alloc_lfiproc(struct kage *kage)
 	if (!lfiproc)
 		return NULL;
 
+	*idx = kage->open_proc_idx;
 	kage->procs[kage->open_proc_idx] = lfiproc;
 	kage->open_proc_idx =
 		(kage->open_proc_idx + 1) % ARRAY_SIZE(kage->procs);
 	return lfiproc;
 }
 
-int kage_call_init(struct kage *kage, initcall_t fn)
+// Call a module init function
+int kage_call_init(struct kage *kage, initcall_t fn) {
+	return kage_call(kage, fn, 0, 0, 0, 0, 0, 0);
+}
+
+// Invoke a function call into the sandbox
+uint64_t kage_call(struct kage *kage, void * fn,
+              uint64_t p0, uint64_t p1, uint64_t p2, 
+              uint64_t p3, uint64_t p4, uint64_t p5)
 {
+	// FIXME: check fn in sandbox range
 	void *sb_stack = kage_memory_alloc(kage, 1 << KAGE_SANDBOX_STACK_ORDER,
 					   MOD_DATA);
-	struct LFIProc *lfiproc = alloc_lfiproc(kage);
-	int lfi_idx = (lfiproc - kage->procs[0]) / sizeof(struct LFIProc);
+	uint64_t rv;
+	int lfi_idx;
+	struct LFIProc *lfiproc = alloc_lfiproc(kage, &lfi_idx);
+	if (!lfiproc) {
+		pr_err(MODULE_NAME " kage_call: Failure to allocate LFI context\n");
+		return -1;
+	}
 	unsigned long rel_stack_base =
 		(uintptr_t)sb_stack + KAGE_SANDBOX_STACK_SIZE - kage->base;
 
 	lfi_proc_init(lfiproc, kage, (int64_t)fn - kage->base, rel_stack_base,
 		      lfi_idx);
-	lfi_proc_invoke(lfiproc, fn, (void *)(kage->lfi_sec_addr));
+	rv = lfi_proc_invoke(lfiproc, fn, (void *)(kage->lfi_exit_addr), 
+			     p0, p1, p2, p3, p4, p5);
 	pr_info("%s finished\n", __func__);
-	return 0;
+    // FIXME: free lfiproc
+	return rv;
 }
 
 void kage_memory_free(struct kage *kage, void *vaddr)
 {
+  // FIXME: free kage->procs
 }
 
 static ssize_t debugfs_trigger_write(struct file *debug_file_node,
@@ -525,6 +566,7 @@ static ssize_t debugfs_trigger_write(struct file *debug_file_node,
 void kage_free(struct kage *kage)
 {
 	pr_info("%s %s\n", MODULE_NAME, __func__);
+	kage_free_closures(kage);
 	kage_memory_free_all(kage);
 	bitmap_free(kage->alloc_bitmap);
 	vfree(kage->pages);
