@@ -2372,7 +2372,7 @@ static int move_module(struct module *mod, struct load_info *info)
 			 (long)shdr->sh_size, info->secstrings + shdr->sh_name);
                 if (shdr->sh_offset == info->lfi_offs) {
                         // FIXME: hacky
-                        kage->lfi_exit_addr = shdr->sh_addr;
+                        kage->kage_exit_addr = shdr->sh_addr;
                 }
 	}
 

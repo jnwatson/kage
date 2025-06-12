@@ -4,6 +4,8 @@
 
 #include <linux/types.h>
 #include <linux/module.h>
+#include "../../../../kdriver1/kage_syscall.h"
+
 
 // Assume 8k stack
 #define KAGE_SANDBOX_STACK_ORDER 13
@@ -35,7 +37,7 @@ struct kage {
 
 	// Where the instruction sequence to exit from sandbox lives (inside the
 	// sandbox)
-	unsigned long lfi_exit_addr;
+	unsigned long kage_exit_addr;
 
 	struct assoc_array closures;
 };

@@ -501,7 +501,7 @@ uint64_t kage_call(struct kage *kage, void * fn,
 
 	lfi_proc_init(lfiproc, kage, (int64_t)fn - kage->base, rel_stack_base,
 		      lfi_idx);
-	rv = lfi_proc_invoke(lfiproc, fn, (void *)(kage->lfi_exit_addr), 
+	rv = lfi_proc_invoke(lfiproc, fn, (void *)(kage->kage_exit_addr), 
 			     p0, p1, p2, p3, p4, p5);
 	pr_info("%s finished\n", __func__);
     // FIXME: free lfiproc

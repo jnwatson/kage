@@ -119,10 +119,10 @@ static unsigned long guard_kmalloc_generic(struct kage *kage, unsigned long p0,
                                                 flags);
 }
 
-guard_t *syscall_to_guard[GUARD_NUM_SYSCALLS] = {
-	[1] = guard__printk,
-	[2] = guard_tasklet_init,
-	[4] = guard_kmalloc_generic,
-	[5] = guard_kmalloc_generic,
-	[6] = guard_kmalloc_generic,
+guard_t *syscall_to_guard[] = {
+	[KAGE_PRINTK] = guard__printk,
+	[KAGE_TASKLET_INIT] = guard_tasklet_init,
+	[KAGE_KMALLOC_LARGE] = guard_kmalloc_generic,
+	[KAGE_KMALLOC_TRACE] = guard_kmalloc_generic,
+	[KAGE___KMALLOC] = guard_kmalloc_generic,
 };
