@@ -8,8 +8,6 @@ typedef unsigned long guard_t(struct kage *kage, unsigned long p0,
 			      unsigned long p3, unsigned long p4,
 			      unsigned long p5);
 
-guard_t guard__tasklet_init;
-
 #define GUARD_NUM_SYSCALLS 20
 extern guard_t *syscall_to_guard[GUARD_NUM_SYSCALLS];
 

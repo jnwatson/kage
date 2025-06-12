@@ -2312,7 +2312,7 @@ static int move_module(struct module *mod, struct load_info *info)
 #ifdef CONFIG_SECURITY_KAGE
 		}
 		else {
-		        ptr = kage_memory_alloc(kage, mod->mem[type].size, type);
+		        ptr = kage_memory_alloc(kage, mod->mem[type].size, type, GFP_KERNEL);
 		}
 #endif
 		/*

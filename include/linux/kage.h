@@ -40,7 +40,7 @@ struct kage {
 	struct assoc_array closures;
 };
 
-void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type);
+void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type, gfp_t flags);
 void kage_memory_free_all(struct kage *kage);
 void kage_memory_free(struct kage *kage, void *vaddr);
 struct kage *kage_create(void);

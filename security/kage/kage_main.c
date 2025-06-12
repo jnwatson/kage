@@ -56,7 +56,7 @@ bool is_valid_vaddr(struct kage const *kage, unsigned long addr,
 
 static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 					unsigned long end,
-					enum mod_mem_type type, bool do_lock)
+					enum mod_mem_type type, bool do_lock, gfp_t flags)
 {
 	// Keep track of all pages allocated just so we can undo the allocation if
     // we get a failure
@@ -78,7 +78,7 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 		spin_lock_irqsave(&lock, irq_flags);
 
 	for (i = 0; i < nr_pages; i++) {
-		tmp_pages[i] = alloc_pages(GFP_KERNEL | __GFP_ZERO,
+		tmp_pages[i] = alloc_pages(flags,
 					   DOMAIN_PAGE_SHIFT - PAGE_SHIFT);
 		if (!tmp_pages[i]) {
 			ret = ERR_PTR(-ENOMEM);
@@ -112,7 +112,7 @@ cleanup:
 	return ret;
 }
 
-void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type)
+void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type, gfp_t flags)
 {
 	unsigned long start = ALIGN(kage->base + kage->next_open_offs,
 				    1 << DOMAIN_PAGE_SHIFT);
@@ -129,7 +129,7 @@ void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type)
 	}
 
 	spin_lock_irqsave(&lock, irq_flags);
-	ret = kage_memory_alloc_explicit(kage, start, end, type, false);
+	ret = kage_memory_alloc_explicit(kage, start, end, type, false, flags);
 	if (IS_ERR(ret))
 		goto cleanup;
 	kage->next_open_offs = end - kage->base;
@@ -408,7 +408,7 @@ static void *setup_lfisys(struct kage *kage)
 	unsigned long lfisys_end = ALIGN((kage->base + sizeof(struct LFISys)),
 					 1 << DOMAIN_PAGE_SHIFT);
 	void *sysmem = kage_memory_alloc_explicit(kage, kage->base, lfisys_end,
-						  MOD_DATA, true);
+						  MOD_DATA, true, GFP_KERNEL);
 
 	if (IS_ERR(sysmem))
 		return sysmem;
@@ -488,7 +488,7 @@ uint64_t kage_call(struct kage *kage, void * fn,
 {
 	// FIXME: check fn in sandbox range
 	void *sb_stack = kage_memory_alloc(kage, 1 << KAGE_SANDBOX_STACK_ORDER,
-					   MOD_DATA);
+					   MOD_DATA, GFP_KERNEL);
 	uint64_t rv;
 	int lfi_idx;
 	struct LFIProc *lfiproc = alloc_lfiproc(kage, &lfi_idx);

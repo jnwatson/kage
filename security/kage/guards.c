@@ -52,7 +52,7 @@ static const struct assoc_array_ops kage_tasklet_closure_ops = {
 	.get_object_key_chunk = get_object_key_chunk,
 };
 
-unsigned long guard_tasklet_init(struct kage *kage, unsigned long p0,
+static unsigned long guard_tasklet_init(struct kage *kage, unsigned long p0,
 				  unsigned long p1, unsigned long p2,
 				  unsigned long p3, unsigned long p4,
 				  unsigned long p5)
@@ -92,7 +92,7 @@ unsigned long guard_tasklet_init(struct kage *kage, unsigned long p0,
 	return 0;
 }
 
-unsigned long guard__printk(struct kage *kage, unsigned long p0,
+static unsigned long guard__printk(struct kage *kage, unsigned long p0,
 			    unsigned long p1, unsigned long p2,
 			    unsigned long p3, unsigned long p4,
 			    unsigned long p5)
@@ -107,7 +107,22 @@ unsigned long guard__printk(struct kage *kage, unsigned long p0,
 	return rv;
 }
 
+static unsigned long guard_kmalloc_generic(struct kage *kage, unsigned long p0,
+			      unsigned long p1, unsigned long p2,
+			      unsigned long p3, unsigned long p4,
+			      unsigned long p5)
+{
+	size_t size = (size_t)p0;
+	gfp_t flags = (gfp_t)p1;
+
+	return (unsigned long)kage_memory_alloc(kage, size, MOD_DATA, 
+                                                flags);
+}
+
 guard_t *syscall_to_guard[GUARD_NUM_SYSCALLS] = {
 	[1] = guard__printk,
 	[2] = guard_tasklet_init,
+	[4] = guard_kmalloc_generic,
+	[5] = guard_kmalloc_generic,
+	[6] = guard_kmalloc_generic,
 };
