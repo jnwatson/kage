@@ -2289,7 +2289,6 @@ static int move_module(struct module *mod, struct load_info *info)
 #ifdef CONFIG_SECURITY_KAGE
 	struct kage * kage = 0;
 
-        // FIXME: ifdef 
 	if (info->lfi_offs) {
 		kage = kage_create();
 		if (!kage) {
@@ -2370,10 +2369,11 @@ static int move_module(struct module *mod, struct load_info *info)
 		shdr->sh_addr = (unsigned long)dest;
 		pr_debug("\t0x%lx 0x%.8lx %s\n", (long)shdr->sh_addr,
 			 (long)shdr->sh_size, info->secstrings + shdr->sh_name);
+                #ifdef CONFIG_SECURITY_KAGE
                 if (shdr->sh_offset == info->lfi_offs) {
-                        // FIXME: hacky
                         kage->kage_exit_addr = shdr->sh_addr;
                 }
+#endif
 	}
 
 	return 0;
@@ -2650,14 +2650,14 @@ static noinline int do_init_module(struct module *mod)
 	freeinit->init_text = mod->mem[MOD_INIT_TEXT].base;
 	freeinit->init_data = mod->mem[MOD_INIT_DATA].base;
 	freeinit->init_rodata = mod->mem[MOD_INIT_RODATA].base;
-#if CONFIG_SECURITY_KAGE
+#ifdef CONFIG_SECURITY_KAGE
         freeinit->kage = mod->kage;
 #endif
 
 	do_mod_ctors(mod);
 	/* Start the module */
 	if (mod->init != NULL)
-#if CONFIG_SECURITY_KAGE
+#ifdef CONFIG_SECURITY_KAGE
 		ret = do_one_initcall2(mod->kage, mod->init);
 #else
 		ret = do_one_initcall(mod->init);

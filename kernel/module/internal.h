@@ -83,9 +83,8 @@ struct load_info {
 		unsigned int sym, str, mod, vers, info, pcpu;
 	} index;
 #ifdef CONFIG_SECURITY_KAGE
-        int lfi_offs;
+	int lfi_offs;
 #endif
-
 };
 
 enum mod_license {

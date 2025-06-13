@@ -1227,7 +1227,35 @@ static inline void do_trace_initcall_finish(initcall_t fn, int ret)
 #endif /* !TRACEPOINTS_ENABLED */
 
 int __init_or_module do_one_initcall(initcall_t fn) {
+#ifdef CONFIG_SECURITY_KAGE
         return do_one_initcall2(NULL, fn);
+#else
+	int count = preempt_count();
+	char msgbuf[64];
+	int ret;
+
+	if (initcall_blacklisted(fn))
+		return -EPERM;
+
+	do_trace_initcall_start(fn);
+	ret = fn();
+	do_trace_initcall_finish(fn, ret);
+
+	msgbuf[0] = 0;
+
+	if (preempt_count() != count) {
+		sprintf(msgbuf, "preemption imbalance ");
+		preempt_count_set(count);
+	}
+	if (irqs_disabled()) {
+		strlcat(msgbuf, "disabled interrupts ", sizeof(msgbuf));
+		local_irq_enable();
+	}
+	WARN(msgbuf[0], "initcall %pS returned with %s\n", fn, msgbuf);
+
+	add_latent_entropy();
+	return ret;
+#endif
 }
 
 int __init_or_module do_one_initcall2(struct kage *kage, initcall_t fn)
@@ -1240,10 +1268,13 @@ int __init_or_module do_one_initcall2(struct kage *kage, initcall_t fn)
 		return -EPERM;
 
 	do_trace_initcall_start(fn);
+#ifdef CONFIG_SECURITY_KAGE
         if (kage) {
                 ret = kage_call_init(kage, fn);
         }
-        else {
+        else
+#endif
+        {
                 ret = fn();
         }
 	do_trace_initcall_finish(fn, ret);
