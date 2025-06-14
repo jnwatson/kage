@@ -23,8 +23,7 @@
 
 #define MODULE_NAME "kage"
 #define VM_AREA_SIZE (64UL * 1024 * 1024 * 1024)
-#define DOMAIN_SPAN (4UL * 1024 * 1024 * 1024)
-#define MAX_DOMAINS (VM_AREA_SIZE / DOMAIN_SPAN - 1)
+#define MAX_DOMAINS (VM_AREA_SIZE / KAGE_GUEST_SIZE - 1)
 
 // To reduce PTE fragmentation, prefer PMD-sized allocations.
 // FIXME: This won't be appropriate for PAGE_SIZE > 4KiB, nor call stacks
@@ -47,9 +46,9 @@ bool is_valid_vaddr(struct kage const *kage, unsigned long addr,
 	if (addr < kage->base)
 		return false;
 	if (offset < PAGE_SIZE + 80UL * 1024 ||
-	    offset > DOMAIN_SPAN - 80UL * 1024)
+	    offset > KAGE_GUEST_SIZE - 80UL * 1024)
 		return false;
-	if (offset > DOMAIN_SPAN - 128UL * 1024 && mod_mem_type_is_text(type))
+	if (offset > KAGE_GUEST_SIZE - 128UL * 1024 && mod_mem_type_is_text(type))
 		return false;
 	return true;
 }
@@ -180,7 +179,7 @@ void kage_free(struct kage *kage,
 	unsigned long flags;
 	int i;
 
-	if (vaddr_offset >= DOMAIN_SPAN || end > kage->base + DOMAIN_SPAN) {
+	if (vaddr_offset >= KAGE_GUEST_SIZE || end > kage->base + KAGE_GUEST_SIZE) {
 		WARN_ON(1);
 		return;
 	}
@@ -205,10 +204,10 @@ EXPORT_SYMBOL(kage_memory_free);
 void kage_memory_free_all(struct kage *kage)
 {
 	unsigned long flags;
-	unsigned int nr_pages = DOMAIN_SPAN >> DOMAIN_PAGE_SHIFT;
+	unsigned int nr_pages = KAGE_GUEST_SIZE >> DOMAIN_PAGE_SHIFT;
 	int i;
 
-	vunmap_range(kage->base, kage->base + DOMAIN_SPAN);
+	vunmap_range(kage->base, kage->base + KAGE_GUEST_SIZE);
 	spin_lock_irqsave(&lock, flags);
 	for_each_set_bit(i, kage->alloc_bitmap, nr_pages)
 		__free_pages(kage->pages[i], DOMAIN_PAGE_SHIFT - PAGE_SHIFT);
@@ -284,13 +283,13 @@ static int allocate_vmem(void)
 // Set the start addrs of the kage
 static void init_kages(void)
 {
-	unsigned long addr = ALIGN((unsigned long)vm_area->addr, DOMAIN_SPAN);
+	unsigned long addr = ALIGN((unsigned long)vm_area->addr, KAGE_GUEST_SIZE);
 	int i;
 
 	for (i = 0; i < MAX_DOMAINS; i++)
 		kages[i].base = addr;
 
-	addr += DOMAIN_SPAN;
+	addr += KAGE_GUEST_SIZE;
 	BUG_ON(addr > ((unsigned long)vm_area->addr + vm_area->size));
 }
 

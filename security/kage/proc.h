@@ -3,12 +3,6 @@
 
 #include <linux/types.h>
 
-enum {
-	CODEMAX = 1ULL * 1024 * 1024 * 1024,
-
-	GUARD1SZ = 80 * 1024,
-	GUARD2SZ = 80 * 1024,
-};
 
 typedef struct LFIRegs {
 	uint64_t x0;
