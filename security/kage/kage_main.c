@@ -387,7 +387,7 @@ static uint64_t kage_syshandler(struct kage *kage, uint64_t sysno, uint64_t p0,
 
 	pr_info("%s syshandler %llx %llx %llx %llx %llx %llx %llx\n",
 		MODULE_NAME, sysno, p0, p1, p2, p3, p4, p5);
-	if (sysno >= GUARD_NUM_SYSCALLS) {
+	if (sysno >= KAGE_SYSCALL_COUNT) {
 		pr_warn("%s invalid system call number %lld\n", MODULE_NAME,
 			sysno);
 		return -1;
