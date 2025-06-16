@@ -2323,6 +2323,43 @@ static unsigned long guard_wakeup_source_register(struct kage *kage, unsigned lo
 	return (unsigned long)wakeup_source_register(dev, name);
 }
 
+static unsigned long guard_wakeup_source_unregister(struct kage *kage, unsigned long p0,
+						  unsigned long p1, unsigned long p2,
+						  unsigned long p3, unsigned long p4,
+						  unsigned long p5)
+{
+	struct wakeup_source *ws = (struct wakeup_source *)p0;
+
+	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
+		return -1;
+	}
+
+	wakeup_source_unregister(ws);
+	return 0;
+}
+
+static unsigned long guard___warn_printk(struct kage *kage, unsigned long p0,
+					 unsigned long p1, unsigned long p2,
+					 unsigned long p3, unsigned long p4,
+					 unsigned long p5)
+{
+	const char *fmt = (const char *)p0;
+	va_list *pargs = (va_list *)p1;
+
+	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
+		return -1;
+	}
+	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
+		return -1;
+	}
+
+	__warn_printk(fmt, *pargs);
+	return 0;
+}
+
 static unsigned long guard___dynamic_pr_dbg(struct kage *kage, unsigned long p0,
                                       unsigned long p1, unsigned long p2,
                                       unsigned long p3, unsigned long p4,
@@ -2544,10 +2581,11 @@ guard_t *syscall_to_guard[KAGE_SYSCALL_COUNT] = {
 	[KAGE_UNREGISTER_CHRDEV_REGION] = guard_unregister_chrdev_region,
 	[KAGE_VPRINTK] = guard_vprintk,
 	[KAGE_WAKEUP_SOURCE_REGISTER] = guard_wakeup_source_register,
+	[KAGE_WAKEUP_SOURCE_UNREGISTER] = guard_wakeup_source_unregister,
 	[KAGE___DYNAMIC_PR_DBG] = guard___dynamic_pr_dbg,
 #ifdef CONFIG_CHARGER_MAX77759
 	[KAGE_TCPM_GET_PARTNER_SRC_CAPS] = guard_tcpm_get_partner_src_caps,
 	[KAGE_TCPM_PUT_PARTNER_SRC_CAPS] = guard_tcpm_put_partner_src_caps,
 #endif
-
+	[KAGE___WARN_PRINTK] = guard___warn_printk,
 };
