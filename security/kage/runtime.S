@@ -1,10 +1,10 @@
 #define N_RTCALLS 256
 #define PROC_REGS 16
-
+// FIXME: use common header for this
 #define STACK_ORDER 13
 .text
 
-// All this code does not run in the sandbox
+// All this code runs in the host, not the sandbox
 
 // Places the pointer to the active LFIProc in x21.
 .macro GET_PROC
@@ -29,7 +29,7 @@
     b     2f
 
 1:
-    mov   x21, #0  // FIXME: this is attacker controlled
+    mov   x21, #0  // FIXME: this is attacker controlled, but checked by the other side.  Can attacker do bad things?
     brk #0
 2:  // done
 .endm

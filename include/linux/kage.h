@@ -4,7 +4,8 @@
 
 #include <linux/types.h>
 #include <linux/module.h>
-#include "../../../../kdriver1/kage_syscall.h"
+#include <linux/assoc_array.h>
+#include <linux/kage_syscall.h>
 
 
 // Assume 8k stack
@@ -21,7 +22,20 @@ typedef uint64_t (*SysHandler)(struct kage *kage, uint64_t sysno, uint64_t,
 			       uint64_t, uint64_t, uint64_t, uint64_t,
 			       uint64_t);
 
-#include <linux/assoc_array.h>
+#include <linux/kage_objdescriptor.h>
+
+/*
+ * While object descriptors reserve 16 bits for the index, we limit the
+ * actual number of objects to a smaller value to avoid excessive memory
+ * allocation.
+ */
+#define KAGE_MAX_OBJ_INDEX 511
+
+struct kage_objstorage {
+	void __rcu *objs[KAGE_MAX_OBJ_INDEX + 1];
+	spinlock_t lock;
+	unsigned int next_slot;
+};
 
 struct kage {
 	struct page **pages; // ==NULL if kage unused
@@ -41,6 +55,8 @@ struct kage {
 	unsigned long kage_exit_addr;
 
 	struct assoc_array closures;
+	struct kage_objstorage *objstorage;
+	u8 owner_id;
 };
 
 void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type, gfp_t flags);

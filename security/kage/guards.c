@@ -42,10 +42,11 @@
 #include <linux/usb/max77759_export.h>
 #endif
 
-#include "../../../../../kdriver1/kage_syscall.h"
+#include <linux/kage_syscall.h>
 
 #include "proc.h"
 #include "guards.h"
+#include "objdesc.h"
 
 /*
  * These functions sit outside the LFI sandbox and allow the sandbox to make
@@ -1670,17 +1671,28 @@ static unsigned long guard_queue_delayed_work_on(struct kage *kage, unsigned lon
                                       unsigned long p5)
 {
 	int cpu = (int)p0;
-	struct workqueue_struct *wq = (struct workqueue_struct *)p1;
+	struct workqueue_struct *wq;
 	struct delayed_work *dwork = (struct delayed_work *)p2;
 	unsigned long delay = (unsigned long)p3;
 
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		return -1;
+	if (is_kage_objdescriptor(p1)) {
+		wq = kage_obj_get(kage, p1, KAGE_ODTYPE_WORKQUEUE);
+		if (!wq) {
+			pr_err("%s: invalid object descriptor\n", __func__);
+			return 0;
+		}
+	}
+	else {
+
+		if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+			pr_err("%s: guest pointer argument out of bounds\n", __func__);
+			return 0;
+		}
+		wq = (struct workqueue_struct *)p1;
 	}
 	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		return -1;
+		return 0;
 	}
 
 	return queue_delayed_work_on(cpu, wq, dwork, delay);

@@ -1,7 +1,7 @@
 #ifndef _KAGE_GUARDS_H
 #define _KAGE_GUARDS_H
 
-#include "../../../../../kdriver1/kage_syscall.h"
+#include <linux/kage_syscall.h>
 
 struct kage;
 

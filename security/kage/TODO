@@ -1,0 +1,8 @@
+Allow ptr auth/BTI
+Allow CFI
+Allow shadow stack
+Allow tracepoints
+Allow module constructors
+
+Move guard functions into kernel module
+Dynamically resolve guest stubs

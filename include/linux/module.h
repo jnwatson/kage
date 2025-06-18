@@ -591,7 +591,7 @@ struct module {
 	struct kage *kage;
 #endif
 
-	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(1); // FIXME: should I delete or elseif? (since added *kage)
 	ANDROID_KABI_RESERVE(2);
 	ANDROID_KABI_RESERVE(3);
 	ANDROID_KABI_RESERVE(4);

@@ -20,6 +20,7 @@
 #include "runtime.h"
 #include "proc.h"
 #include "guards.h"
+#include "objdesc.h"
 
 #define MODULE_NAME "kage"
 #define VM_AREA_SIZE (64UL * 1024 * 1024 * 1024)
@@ -111,6 +112,9 @@ cleanup:
 	return ret;
 }
 
+/*
+ * Allocates memory in the guest's address range
+ */
 void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type, gfp_t flags)
 {
 	unsigned long start = ALIGN(kage->base + kage->next_open_offs,
@@ -147,7 +151,11 @@ static int kage_init(struct kage *kage)
 {
     /* Allocate tracking structures */
 	unsigned long nr_pages = VM_AREA_SIZE >> DOMAIN_PAGE_SHIFT;
-	int i;
+	int i, err;
+	static u8 next_owner_id = 0;
+
+	if (next_owner_id == KAGE_OWNER_GLOBAL)
+		return -ENOSPC;
 
 	kage->pages = vzalloc(nr_pages * sizeof(*kage->pages));
 	kage->alloc_bitmap = bitmap_zalloc(nr_pages, GFP_KERNEL);
@@ -161,6 +169,16 @@ static int kage_init(struct kage *kage)
 		return -ENOMEM;
 	}
 
+	err = kage_objstorage_init(&kage->objstorage);
+	if (err) {
+		vfree(kage->pages);
+		kage->pages = 0;
+		bitmap_free(kage->alloc_bitmap);
+		return err;
+	}
+
+	kage->owner_id = next_owner_id++;
+
 	for (i = 0; i < ARRAY_SIZE(kage->procs); i++)
 		kage->procs[i] = NULL;
 	kage->open_proc_idx = 0;
@@ -169,7 +187,7 @@ static int kage_init(struct kage *kage)
 }
 
 #if 0
-void kage_free(struct kage *kage,
+void kage_memory_free(struct kage *kage,
 	      unsigned long vaddr)
 {
 	unsigned long vaddr_offset = vaddr - kage->base;
@@ -293,6 +311,112 @@ static void init_kages(void)
 	BUG_ON(addr > ((unsigned long)vm_area->addr + vm_area->size));
 }
 
+#include "objdesc.h"
+
+static struct kage_objstorage *kage_global_objstorage;
+
+int kage_objstorage_init(struct kage_objstorage **storage_ptr)
+{
+	*storage_ptr = kzalloc(sizeof(struct kage_objstorage), GFP_KERNEL);
+	if (!*storage_ptr)
+		return -ENOMEM;
+	spin_lock_init(&(*storage_ptr)->lock);
+	(*storage_ptr)->next_slot = 0;
+	return 0;
+}
+
+void kage_objstorage_free(struct kage_objstorage *storage)
+{
+	kfree(storage);
+}
+
+void *kage_obj_get(struct kage *kage, u64 descriptor,
+		   enum kage_objdescriptor_type type)
+{
+	u8 owner = kage_unpack_objdescriptor_owner(descriptor);
+	u16 objindex = kage_unpack_objdescriptor_objindex(descriptor);
+	u8 obj_type = kage_unpack_objdescriptor_type(descriptor);
+	struct kage_objstorage *storage;
+
+	if (objindex > KAGE_MAX_OBJ_INDEX)
+		return ERR_PTR(-EINVAL);
+
+	if (obj_type != type)
+		return ERR_PTR(-EINVAL);
+
+	if (owner == KAGE_OWNER_GLOBAL)
+		storage = kage_global_objstorage;
+	else
+		storage = kage->objstorage;
+
+	if (!storage)
+		return ERR_PTR(-EINVAL);
+
+	return rcu_dereference(storage->objs[objindex]);
+}
+
+int kage_obj_set(struct kage *kage, u64 descriptor, void *obj)
+{
+	u8 owner = kage_unpack_objdescriptor_owner(descriptor);
+	u16 objindex = kage_unpack_objdescriptor_objindex(descriptor);
+	struct kage_objstorage *storage;
+
+	if (objindex > KAGE_MAX_OBJ_INDEX)
+		return -EINVAL;
+
+	if (owner == KAGE_OWNER_GLOBAL)
+		storage = kage_global_objstorage;
+	else
+		storage = kage->objstorage;
+
+	if (!storage)
+		return -EINVAL;
+
+	rcu_assign_pointer(storage->objs[objindex], obj);
+	return 0;
+}
+
+void kage_obj_delete(struct kage *kage, u64 descriptor)
+{
+	kage_obj_set(kage, descriptor, NULL);
+}
+
+u64 kage_objstorage_alloc(struct kage *kage, bool is_global,
+			      enum kage_objdescriptor_type type)
+{
+	struct kage_objstorage *storage;
+	unsigned long flags;
+	unsigned int i;
+	u8 owner;
+
+	if (is_global) {
+		storage = kage_global_objstorage;
+		owner = KAGE_OWNER_GLOBAL;
+	} else {
+		storage = kage->objstorage;
+		owner = kage->owner_id;
+	}
+
+	if (!storage)
+		return 0;
+
+	spin_lock_irqsave(&storage->lock, flags);
+
+	for (i = 0; i <= KAGE_MAX_OBJ_INDEX; i++) {
+		unsigned int slot = (storage->next_slot + i) % (KAGE_MAX_OBJ_INDEX + 1);
+
+		if (!rcu_dereference_protected(storage->objs[slot],
+					       lockdep_is_held(&storage->lock))) {
+			storage->next_slot = slot + 1;
+			spin_unlock_irqrestore(&storage->lock, flags);
+			return kage_pack_objdescriptor(type, owner, slot);
+		}
+	}
+
+	spin_unlock_irqrestore(&storage->lock, flags);
+	return 0;
+}
+
 static int __init kagemodule_init(void)
 {
 	void *addr;
@@ -301,12 +425,17 @@ static int __init kagemodule_init(void)
 	phys_addr_t phys_addr;
     // Convert the struct page* obtained from the correct path to a physical address.
 	unsigned long vmalloc_start_addr, vmalloc_end_addr, vmalloc_size_bytes;
+	int err;
 
 	/* Initialize context */
 	init_debugfs();
 	pr_info("%s: kage_init\n", MODULE_NAME);
 
 	spin_lock_init(&lock);
+
+	err = kage_objstorage_init(&kage_global_objstorage);
+	if (err)
+		return err;
 
 	/* Allocate VM area */
 	vm_area = get_vm_area(VM_AREA_SIZE, VM_ALLOC);
@@ -567,6 +696,7 @@ void kage_free(struct kage *kage)
 	pr_info("%s %s\n", MODULE_NAME, __func__);
 	kage_free_closures(kage);
 	kage_memory_free_all(kage);
+	kage_objstorage_free(kage->objstorage);
 	bitmap_free(kage->alloc_bitmap);
 	vfree(kage->pages);
 	kage->pages = NULL;
@@ -584,6 +714,7 @@ static void __exit kagemodule_exit(void)
 		if (kage->pages)
 			kage_free(kage);
 	}
+	kage_objstorage_free(kage_global_objstorage);
 	vfree(vm_area);
 }
 
@@ -591,5 +722,5 @@ module_init(kagemodule_init);
 module_exit(kagemodule_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Your Name");
-MODULE_DESCRIPTION("PTE walking example using current->mm");
+MODULE_AUTHOR("Nic Watson");
+MODULE_DESCRIPTION("Kage Kernel Module Sandbox");
