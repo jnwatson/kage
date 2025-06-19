@@ -39,6 +39,7 @@ struct kage_objstorage {
 
 struct kage {
 	struct page **pages; // ==NULL if kage unused
+        const char *modname;
 	unsigned long base;
 	unsigned long *alloc_bitmap;
 	unsigned long next_open_offs;
@@ -52,7 +53,7 @@ struct kage {
 
 	// Where the instruction sequence to exit from sandbox lives (inside the
 	// sandbox)
-	unsigned long kage_exit_addr;
+	unsigned long exit_addr;
 
 	struct assoc_array closures;
 	struct kage_objstorage *objstorage;
@@ -62,8 +63,14 @@ struct kage {
 void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type, gfp_t flags);
 void kage_memory_free_all(struct kage *kage);
 void kage_memory_free(struct kage *kage, void *vaddr);
-struct kage *kage_create(void);
+struct kage *kage_create(const char *modname);
 void kage_free(struct kage *kage);
+void kage_post_move(struct kage *kage, 
+			   const Elf_Shdr *sechdrs,
+                           unsigned int shnum,
+                           const Elf_Sym *symtab,
+                           unsigned int num_syms,
+                           const char *strtab);
 
 // Calls a modules's init function from within the sandbox and returns the
 // value returned from fn

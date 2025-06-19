@@ -1258,6 +1258,7 @@ int __init_or_module do_one_initcall(initcall_t fn) {
 #endif
 }
 
+#ifdef CONFIG_SECURITY_KAGE
 int __init_or_module do_one_initcall2(struct kage *kage, initcall_t fn)
 {
 	int count = preempt_count();
@@ -1268,12 +1269,10 @@ int __init_or_module do_one_initcall2(struct kage *kage, initcall_t fn)
 		return -EPERM;
 
 	do_trace_initcall_start(fn);
-#ifdef CONFIG_SECURITY_KAGE
         if (kage) {
                 ret = kage_call_init(kage, fn);
         }
         else
-#endif
         {
                 ret = fn();
         }
@@ -1294,6 +1293,7 @@ int __init_or_module do_one_initcall2(struct kage *kage, initcall_t fn)
 	add_latent_entropy();
 	return ret;
 }
+#endif
 
 
 static initcall_entry_t *initcall_levels[] __initdata = {

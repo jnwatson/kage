@@ -1,4 +1,3 @@
-#define N_RTCALLS 256
 #define PROC_REGS 16
 // FIXME: use common header for this
 #define STACK_ORDER 13

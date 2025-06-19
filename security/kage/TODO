@@ -1,8 +1,12 @@
+Use 4k pages
 Allow ptr auth/BTI
 Allow CFI
 Allow shadow stack
 Allow tracepoints
 Allow module constructors
+Randomize kage_vm_area
+Randomize location of first module in kage_vm_area
 
 Move guard functions into kernel module
 Dynamically resolve guest stubs
+Replace module init and exit with closures and kage_call to reduce module code change

@@ -153,7 +153,7 @@ static unsigned long guard_tasklet_init(struct kage *kage, unsigned long p0,
 	struct kage_tasklet_closure *closure;
 	struct assoc_array_edit *edit;
 
-        if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+        if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n",  __func__);
 		return -1;
         }
@@ -187,6 +187,22 @@ static unsigned long guard_tasklet_init(struct kage *kage, unsigned long p0,
 	return 0;
 }
 
+static unsigned long guard___tasklet_schedule(struct kage *kage, unsigned long p0,
+                                    unsigned long p1, unsigned long p2,
+                                    unsigned long p3, unsigned long p4,
+                                    unsigned long p5)
+{
+  struct tasklet_struct *t = (struct tasklet_struct *)p0;
+
+  if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
+          pr_err("%s: guest pointer argument out of bounds\n", __func__);
+          return -1;
+  }
+
+  __tasklet_schedule(t);
+  return 0;
+}
+
 static unsigned long guard__printk(struct kage *kage, unsigned long p0,
 			    unsigned long p1, unsigned long p2,
 			    unsigned long p3, unsigned long p4,
@@ -196,11 +212,13 @@ static unsigned long guard__printk(struct kage *kage, unsigned long p0,
 	va_list *pargs = (va_list *)p1;
 	int rv = 0;
 
-        if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
+		pr_info("kage->base: %lx\n", kage->base);
+		pr_info("p0: %lx\n", p0);
 		pr_err("%s: guest pointer argument out of bounds\n",  __func__);
 		return -1;
         }
-        if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+        if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n",  __func__);
 		return -1;
         }
@@ -221,6 +239,19 @@ static unsigned long guard_kmalloc_generic(struct kage *kage, unsigned long p0,
                                                 flags);
 }
 
+static unsigned long guard_kmalloc_trace(struct kage *kage, unsigned long p0,
+                                      unsigned long p1, unsigned long p2,
+                                      unsigned long p3, unsigned long p4,
+                                      unsigned long p5)
+{
+  gfp_t flags = (gfp_t)p1;
+  size_t size = (size_t)p2;
+
+  // We ignore p0 (cache) parameter since we want to use the host's
+
+  return (unsigned long)kmalloc(size, flags);
+}
+
 static unsigned long guard_alloc_chrdev_region(struct kage *kage, unsigned long p0,
 					 unsigned long p1, unsigned long p2,
 					 unsigned long p3, unsigned long p4,
@@ -231,11 +262,11 @@ static unsigned long guard_alloc_chrdev_region(struct kage *kage, unsigned long 
 	unsigned count = (unsigned)p2;
 	const char *name = (const char *)p3;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n",  __func__);
 		return -1;
 	}
-	if (p3 < kage->base || p3 > kage->base + KAGE_GUEST_SIZE) {
+	if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n",  __func__);
 		return -1;
 	}
@@ -261,7 +292,7 @@ static unsigned long guard_cdev_add(struct kage *kage, unsigned long p0,
 	dev_t dev = (dev_t)p1;
 	unsigned count = (unsigned)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n",  __func__);
 		return -1;
 	}
@@ -278,7 +309,7 @@ static unsigned long guard_cdev_del(struct kage *kage, unsigned long p0,
 	struct file_operations *host_fops;
 	struct kage_fops_closure *closure;
 
-	if ((unsigned long)cdev < kage->base || (unsigned long)cdev > kage->base + KAGE_GUEST_SIZE) {
+	if ((unsigned long)cdev < kage->base || (unsigned long)cdev >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -305,11 +336,11 @@ static unsigned long guard_cdev_init(struct kage *kage, unsigned long p0,
 	struct kage_fops_closure *closure;
 	struct file_operations *host_fops;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -353,7 +384,7 @@ static unsigned long guard_filp_open(struct kage *kage, unsigned long p0,
 	int flags = (int)p1;
 	umode_t mode = (umode_t)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -383,7 +414,7 @@ static unsigned long guard_device_create(struct kage *kage, unsigned long p0,
 	void *drvdata = (void *)p3;
 	const char *fmt = (const char *)p4;
 
-	if (p4 < kage->base || p4 > kage->base + KAGE_GUEST_SIZE) {
+	if (p4 < kage->base || p4 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -410,7 +441,7 @@ static unsigned long guard_class_create(struct kage *kage, unsigned long p0,
 {
 	const char *name = (const char *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -437,7 +468,7 @@ static unsigned long guard_debugfs_create_dir(struct kage *kage, unsigned long p
 	const char *name = (const char *)p0;
 	struct dentry *parent = (struct dentry *)p1;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -456,7 +487,7 @@ static unsigned long guard_debugfs_create_file(struct kage *kage, unsigned long 
 	void *data = (void *)p3;
 	const struct file_operations *fops = (const struct file_operations *)p4;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -482,7 +513,7 @@ static unsigned long guard_delayed_work_timer_fn(struct kage *kage, unsigned lon
 {
 	struct timer_list *t = (struct timer_list *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -498,7 +529,7 @@ static unsigned long guard_dev_driver_string(struct kage *kage, unsigned long p0
 {
 	const struct device *dev = (const struct device *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -515,15 +546,15 @@ static unsigned long guard__dev_err(struct kage *kage, unsigned long p0,
 	const char *fmt = (const char *)p1;
 	va_list *pargs = (va_list *)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -541,15 +572,15 @@ static unsigned long guard__dev_info(struct kage *kage, unsigned long p0,
 	const char *fmt = (const char *)p1;
 	va_list *pargs = (va_list *)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -567,7 +598,7 @@ static unsigned long guard_devm_kmalloc(struct kage *kage, unsigned long p0,
 	size_t size = (size_t)p1;
 	gfp_t gfp = (gfp_t)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -585,15 +616,15 @@ static unsigned long guard_dev_printk_emit(struct kage *kage, unsigned long p0,
 	const char *fmt = (const char *)p2;
 	va_list *pargs = (va_list *)p3;
 
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p3 < kage->base || p3 > kage->base + KAGE_GUEST_SIZE) {
+	if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -610,15 +641,15 @@ static unsigned long guard__dev_warn(struct kage *kage, unsigned long p0,
 	const char *fmt = (const char *)p1;
 	va_list *pargs = (va_list *)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -634,7 +665,7 @@ static unsigned long guard_down_interruptible(struct kage *kage, unsigned long p
 {
 	struct semaphore *sem = (struct semaphore *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -656,15 +687,15 @@ static unsigned long guard___dynamic_dev_dbg(struct kage *kage, unsigned long p0
 	const char *fmt = (const char *)p2;
 	va_list *va_args = (va_list *)p3;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -684,7 +715,7 @@ static unsigned long guard_fortify_panic(struct kage *kage, unsigned long p0,
 {
 	const char *name = (const char *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -702,7 +733,7 @@ static unsigned long guard_generic_file_llseek(struct kage *kage, unsigned long 
 	loff_t offset = (loff_t)p1;
 	int whence = (int)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -720,7 +751,7 @@ static unsigned long guard_gen_pool_add_owner(struct kage *kage, unsigned long p
 	size_t size = (size_t)p2;
 	void *owner = (void *)p3;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -739,7 +770,7 @@ static unsigned long guard_gen_pool_alloc_algo_owner(struct kage *kage, unsigned
 	void *data = (void *)p3;
 	void *owner = (void *)p4;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -765,7 +796,7 @@ static unsigned long guard_gen_pool_destroy(struct kage *kage, unsigned long p0,
 {
 	struct gen_pool *pool = (struct gen_pool *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -784,15 +815,15 @@ static unsigned long guard_init_timer_key(struct kage *kage, unsigned long p0,
 	struct lock_class_key *key = (struct lock_class_key *)p2;
 	unsigned int flags = (unsigned int)p3;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -808,7 +839,7 @@ static unsigned long guard_kfree(struct kage *kage, unsigned long p0,
 {
 	const void *x = (const void *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -825,11 +856,11 @@ static unsigned long guard_klist_add_head(struct kage *kage, unsigned long p0,
 	struct klist_node *n = (struct klist_node *)p0;
 	struct klist *k = (struct klist *)p1;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -846,11 +877,11 @@ static unsigned long guard_klist_add_tail(struct kage *kage, unsigned long p0,
 	struct klist_node *n = (struct klist_node *)p0;
 	struct klist *k = (struct klist *)p1;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -868,7 +899,7 @@ static unsigned long guard_klist_init(struct kage *kage, unsigned long p0,
 	void (*get)(struct klist_node *) = (void (*)(struct klist_node *))p1;
 	void (*put)(struct klist_node *) = (void (*)(struct klist_node *))p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -884,7 +915,7 @@ static unsigned long guard_klist_iter_exit(struct kage *kage, unsigned long p0,
 {
 	struct klist_iter *i = (struct klist_iter *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -901,11 +932,11 @@ static unsigned long guard_klist_iter_init(struct kage *kage, unsigned long p0,
 	struct klist *k = (struct klist *)p0;
 	struct klist_iter *i = (struct klist_iter *)p1;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -921,7 +952,7 @@ static unsigned long guard_klist_next(struct kage *kage, unsigned long p0,
 {
 	struct klist_iter *i = (struct klist_iter *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -936,7 +967,7 @@ static unsigned long guard_klist_remove(struct kage *kage, unsigned long p0,
 {
 	struct klist_node *n = (struct klist_node *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -953,7 +984,7 @@ static unsigned long guard_kstrdup(struct kage *kage, unsigned long p0,
 	const char *s = (const char *)p0;
 	gfp_t gfp = (gfp_t)p1;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -970,11 +1001,11 @@ static unsigned long guard_kstrtoint(struct kage *kage, unsigned long p0,
 	unsigned int base = (unsigned int)p1;
 	int *res = (int *)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1009,15 +1040,15 @@ static unsigned long guard_list_add_valid_or_report(struct kage *kage, unsigned 
 	struct list_head *prev = (struct list_head *)p1;
 	struct list_head *next = (struct list_head *)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1032,7 +1063,7 @@ static unsigned long guard_list_del_entry_valid_or_report(struct kage *kage, uns
 {
 	struct list_head *entry = (struct list_head *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1049,7 +1080,7 @@ static unsigned long guard_logbuffer_log(struct kage *kage, unsigned long p0,
 	int level = (int)p0;
 	const char *msg = (const char *)p1;
 
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1067,11 +1098,11 @@ static unsigned long guard_logbuffer_vlog(struct kage *kage, unsigned long p0,
 	const char *fmt = (const char *)p1;
 	va_list *args = (va_list *)p2;
 
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1091,11 +1122,11 @@ static unsigned long guard_memcpy(struct kage *kage, unsigned long p0,
 	const void *src = (const void *)p1;
 	size_t count = (size_t)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1113,7 +1144,7 @@ static unsigned long guard_memset(struct kage *kage, unsigned long p0,
 	int c = (int)p1;
 	size_t count = (size_t)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1142,15 +1173,15 @@ static unsigned long guard_mutex_init(struct kage *kage, unsigned long p0,
 	const char *name = (const char *)p1;
 	struct lock_class_key *key = (struct lock_class_key *)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1166,7 +1197,7 @@ static unsigned long guard_mutex_lock(struct kage *kage, unsigned long p0,
 {
 	struct mutex *lock = (struct mutex *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1182,7 +1213,7 @@ static unsigned long guard_mutex_unlock(struct kage *kage, unsigned long p0,
 {
 	struct mutex *lock = (struct mutex *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1199,7 +1230,7 @@ static unsigned long guard_nvmem_device_put(struct kage *kage, unsigned long p0,
 #ifdef CONFIG_NVMEM
 	struct nvmem_device *nvmem = (struct nvmem_device *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1222,11 +1253,11 @@ static unsigned long guard_nvmem_device_read(struct kage *kage, unsigned long p0
 	size_t bytes = (size_t)p2;
 	void *buf = (void *)p3;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p3 < kage->base || p3 > kage->base + KAGE_GUEST_SIZE) {
+	if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1248,11 +1279,11 @@ static unsigned long guard_nvmem_device_write(struct kage *kage, unsigned long p
 	size_t bytes = (size_t)p2;
 	void *buf = (void *)p3;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p3 < kage->base || p3 > kage->base + KAGE_GUEST_SIZE) {
+	if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1271,11 +1302,11 @@ static unsigned long guard_of_find_node_by_name(struct kage *kage, unsigned long
 	struct device_node *from = (struct device_node *)p0;
 	const char *name = (const char *)p1;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1302,15 +1333,15 @@ static unsigned long guard_of_find_property(struct kage *kage, unsigned long p0,
 	const char *name = (const char *)p1;
 	int *lenp = (int *)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1326,11 +1357,11 @@ static unsigned long guard_of_get_child_by_name(struct kage *kage, unsigned long
 	const struct device_node *node = (const struct device_node *)p0;
 	const char *name = (const char *)p1;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1346,11 +1377,11 @@ static unsigned long guard_of_get_next_child(struct kage *kage, unsigned long p0
 	const struct device_node *node = (const struct device_node *)p0;
 	struct device_node *prev = (struct device_node *)p1;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1367,15 +1398,15 @@ static unsigned long guard_of_get_property(struct kage *kage, unsigned long p0,
 	const char *name = (const char *)p1;
 	int *lenp = (int *)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1392,11 +1423,11 @@ static unsigned long guard_of_nvmem_device_get(struct kage *kage, unsigned long 
 	struct device_node *np = (struct device_node *)p0;
 	const char *name = (const char *)p1;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1416,11 +1447,11 @@ static unsigned long guard_of_property_count_elems_of_size(struct kage *kage, un
 	const char *propname = (const char *)p1;
 	int elem_size = (int)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1437,15 +1468,15 @@ static unsigned long guard_of_property_read_string(struct kage *kage, unsigned l
 	const char *propname = (const char *)p1;
 	const char **out_string = (const char **)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1464,15 +1495,15 @@ static unsigned long guard_of_property_read_string_helper(struct kage *kage, uns
 	size_t sz = (size_t)p3;
         int index = (int)p4;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1491,15 +1522,15 @@ static unsigned long guard_of_property_read_variable_u16_array(struct kage *kage
 	size_t sz_min = (size_t)p3;
 	size_t sz_max = (size_t)p4;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1518,15 +1549,15 @@ static unsigned long guard_of_property_read_variable_u32_array(struct kage *kage
 	size_t sz_min = (size_t)p3;
 	size_t sz_max = (size_t)p4;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1541,7 +1572,7 @@ static unsigned long guard_pm_relax(struct kage *kage, unsigned long p0,
 {
 	struct wakeup_source *ws = (struct wakeup_source *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1557,7 +1588,7 @@ static unsigned long guard_pm_stay_awake(struct kage *kage, unsigned long p0,
 {
 	struct wakeup_source *ws = (struct wakeup_source *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1576,15 +1607,15 @@ static unsigned long guard_power_supply_get_by_phandle_array(struct kage *kage, 
 	struct power_supply **psy = (struct power_supply **)p2;
 	ssize_t size = (ssize_t)p3;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1599,7 +1630,7 @@ static unsigned long guard_power_supply_get_drvdata(struct kage *kage, unsigned 
 {
 	struct power_supply *psy = (struct power_supply *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1616,11 +1647,11 @@ static unsigned long guard_power_supply_get_property(struct kage *kage, unsigned
 	enum power_supply_property psp = (enum power_supply_property)p1;
 	union power_supply_propval *val = (union power_supply_propval *)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1635,7 +1666,7 @@ static unsigned long guard_power_supply_put(struct kage *kage, unsigned long p0,
 {
 	struct power_supply *psy = (struct power_supply *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1653,11 +1684,11 @@ static unsigned long guard_power_supply_set_property(struct kage *kage, unsigned
 	enum power_supply_property psp = (enum power_supply_property)p1;
 	const union power_supply_propval *val = (const union power_supply_propval *)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1684,13 +1715,13 @@ static unsigned long guard_queue_delayed_work_on(struct kage *kage, unsigned lon
 	}
 	else {
 
-		if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+		if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 			pr_err("%s: guest pointer argument out of bounds\n", __func__);
 			return 0;
 		}
 		wq = (struct workqueue_struct *)p1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return 0;
 	}
@@ -1705,7 +1736,7 @@ static unsigned long guard__raw_spin_lock_irqsave(struct kage *kage, unsigned lo
 {
 	raw_spinlock_t *lock = (raw_spinlock_t *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1722,7 +1753,7 @@ static unsigned long guard__raw_spin_unlock_irqrestore(struct kage *kage, unsign
 	raw_spinlock_t *lock = (raw_spinlock_t *)p0;
 	unsigned long flags = (unsigned long)p1;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1740,11 +1771,11 @@ static unsigned long guard_regmap_read(struct kage *kage, unsigned long p0,
 	unsigned int reg = (unsigned int)p1;
 	unsigned int *val = (unsigned int *)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1761,7 +1792,7 @@ static unsigned long guard_regmap_write(struct kage *kage, unsigned long p0,
 	unsigned int reg = (unsigned int)p1;
 	unsigned int val = (unsigned int)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1779,15 +1810,15 @@ static unsigned long guard_scnprintf(struct kage *kage, unsigned long p0,
 	const char *fmt = (const char *)p2;
 	va_list *args = (va_list *)p3;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p3 < kage->base || p3 > kage->base + KAGE_GUEST_SIZE) {
+	if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1804,7 +1835,7 @@ static unsigned long guard_seq_lseek(struct kage *kage, unsigned long p0,
 	loff_t offset = (loff_t)p1;
 	int whence = (int)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1820,11 +1851,11 @@ static unsigned long guard_seq_open(struct kage *kage, unsigned long p0,
 	struct file *file = (struct file *)p0;
 	const struct seq_operations *op = (const struct seq_operations *)p1;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1841,15 +1872,15 @@ static unsigned long guard_seq_printf(struct kage *kage, unsigned long p0,
 	const char *fmt = (const char *)p1;
 	va_list *args = (va_list *)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1868,15 +1899,15 @@ static unsigned long guard_seq_read(struct kage *kage, unsigned long p0,
 	size_t size = (size_t)p2;
 	loff_t *ppos = (loff_t *)p3;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p3 < kage->base || p3 > kage->base + KAGE_GUEST_SIZE) {
+	if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1892,7 +1923,7 @@ static unsigned long guard_seq_release(struct kage *kage, unsigned long p0,
 	struct inode *inode = (struct inode *)p0;
 	struct file *file = (struct file *)p1;
 
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1908,7 +1939,7 @@ static unsigned long guard_simple_attr_open(struct kage *kage, unsigned long p0,
 	struct inode *inode = (struct inode *)p0;
 	struct file *file = (struct file *)p1;
 
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1926,15 +1957,15 @@ static unsigned long guard_simple_attr_read(struct kage *kage, unsigned long p0,
 	size_t size = (size_t)p2;
 	loff_t *ppos = (loff_t *)p3;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p3 < kage->base || p3 > kage->base + KAGE_GUEST_SIZE) {
+	if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1947,7 +1978,7 @@ static unsigned long guard_simple_attr_release(struct kage *kage, unsigned long 
                                       unsigned long p3, unsigned long p4,
                                       unsigned long p5)
 {
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1963,7 +1994,7 @@ static unsigned long guard_simple_open(struct kage *kage, unsigned long p0,
 	struct inode *inode = (struct inode *)p0;
 	struct file *file = (struct file *)p1;
 
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -1982,15 +2013,15 @@ static unsigned long guard_simple_read_from_buffer(struct kage *kage, unsigned l
 	const void *from = (const void *)p3;
 	size_t available = (size_t)p4;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p3 < kage->base || p3 > kage->base + KAGE_GUEST_SIZE) {
+	if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2009,15 +2040,15 @@ static unsigned long guard_simple_write_to_buffer(struct kage *kage, unsigned lo
 	const void __user *from = (const void __user *)p3;
 	size_t count = (size_t)p4;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p3 < kage->base || p3 > kage->base + KAGE_GUEST_SIZE) {
+	if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2034,11 +2065,11 @@ static unsigned long guard_single_open(struct kage *kage, unsigned long p0,
 	int (*show)(struct seq_file *, void *) = (int (*)(struct seq_file *, void *))p1;
 	void *data = (void *)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2054,7 +2085,7 @@ static unsigned long guard_single_release(struct kage *kage, unsigned long p0,
 	struct inode *inode = (struct inode *)p0;
 	struct file *file = (struct file *)p1;
 
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2071,15 +2102,15 @@ static unsigned long guard_sscanf(struct kage *kage, unsigned long p0,
 	const char *fmt = (const char *)p1;
 	va_list *args = (va_list *)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2103,7 +2134,7 @@ static unsigned long guard_strlen(struct kage *kage, unsigned long p0,
 {
 	const char *s = (const char *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2120,11 +2151,11 @@ static unsigned long guard_strncmp(struct kage *kage, unsigned long p0,
 	const char *ct = (const char *)p1;
 	size_t count = (size_t)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2140,7 +2171,7 @@ static unsigned long guard_strnlen(struct kage *kage, unsigned long p0,
 	const char *s = (const char *)p0;
 	size_t count = (size_t)p1;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2157,11 +2188,11 @@ static unsigned long guard_strscpy(struct kage *kage, unsigned long p0,
 	const char *src = (const char *)p1;
 	size_t count = (size_t)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2177,11 +2208,11 @@ static unsigned long guard_strsep(struct kage *kage, unsigned long p0,
 	char **s = (char **)p0;
 	const char *ct = (const char *)p1;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2199,15 +2230,15 @@ static unsigned long guard_sysfs_emit_at(struct kage *kage, unsigned long p0,
 	const char *fmt = (const char *)p2;
 	va_list *args = (va_list *)p3;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p3 < kage->base || p3 > kage->base + KAGE_GUEST_SIZE) {
+	if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2234,15 +2265,15 @@ static unsigned long guard_tcpm_get_partner_src_caps(struct kage *kage, unsigned
 	u32 *src_caps = (u32 *)p1;
 	int *cnt = (int *)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2257,7 +2288,7 @@ static unsigned long guard_tcpm_put_partner_src_caps(struct kage *kage, unsigned
 {
 	struct tcpm_port *port = (struct tcpm_port *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2286,7 +2317,7 @@ static unsigned long guard_up(struct kage *kage, unsigned long p0,
 {
 	struct semaphore *sem = (struct semaphore *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2303,11 +2334,11 @@ static unsigned long guard_vprintk(struct kage *kage, unsigned long p0,
 	const char *fmt = (const char *)p0;
 	va_list *args = (va_list *)p1;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2323,11 +2354,11 @@ static unsigned long guard_wakeup_source_register(struct kage *kage, unsigned lo
 	struct device *dev = (struct device *)p0;
 	const char *name = (const char *)p1;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2342,7 +2373,7 @@ static unsigned long guard_wakeup_source_unregister(struct kage *kage, unsigned 
 {
 	struct wakeup_source *ws = (struct wakeup_source *)p0;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2359,11 +2390,11 @@ static unsigned long guard___warn_printk(struct kage *kage, unsigned long p0,
 	const char *fmt = (const char *)p0;
 	va_list *pargs = (va_list *)p1;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2383,11 +2414,11 @@ static unsigned long guard___dynamic_pr_dbg(struct kage *kage, unsigned long p0,
 	const char *fmt = (const char *)p1;
 	va_list *va_args = (va_list *)p2;
 
-	if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -2410,15 +2441,15 @@ static unsigned long guard_simple_attr_write(struct kage *kage, unsigned long p0
 	 size_t size = (size_t)p2;
 	 loff_t *ppos = (loff_t *)p3;
 
-	 if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+	 if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		 pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		 return -1;
 	 }
-	 if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+	 if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		 pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		 return -1;
 	 }
-	 if (p3 < kage->base || p3 > kage->base + KAGE_GUEST_SIZE) {
+	 if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
 		 pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		 return -1;
 	 }
@@ -2435,15 +2466,15 @@ static unsigned long guard_sysfs_emit(struct kage *kage, unsigned long p0,
  const char *fmt = (const char *)p1;
  va_list *args = (va_list *)p2;
 
- if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+ if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
          pr_err("%s: guest pointer argument out of bounds\n", __func__);
          return -1;
  }
- if (p1 < kage->base || p1 > kage->base + KAGE_GUEST_SIZE) {
+ if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
          pr_err("%s: guest pointer argument out of bounds\n", __func__);
          return -1;
  }
- if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+ if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
          pr_err("%s: guest pointer argument out of bounds\n", __func__);
          return -1;
  }
@@ -2461,15 +2492,15 @@ static unsigned long guard_vsnprintf(struct kage *kage, unsigned long p0,
  const char *fmt = (const char *)p2;
  va_list *args = (va_list *)p3;
 
- if (p0 < kage->base || p0 > kage->base + KAGE_GUEST_SIZE) {
+ if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
          pr_err("%s: guest pointer argument out of bounds\n", __func__);
          return -1;
  }
- if (p2 < kage->base || p2 > kage->base + KAGE_GUEST_SIZE) {
+ if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
          pr_err("%s: guest pointer argument out of bounds\n", __func__);
          return -1;
  }
- if (p3 < kage->base || p3 > kage->base + KAGE_GUEST_SIZE) {
+ if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
          pr_err("%s: guest pointer argument out of bounds\n", __func__);
          return -1;
  }
@@ -2480,8 +2511,10 @@ static unsigned long guard_vsnprintf(struct kage *kage, unsigned long p0,
 
 guard_t *syscall_to_guard[KAGE_SYSCALL_COUNT] = {
 	[KAGE_TASKLET_INIT] = guard_tasklet_init,
+        [KAGE___TASKLET_SCHEDULE] = guard___tasklet_schedule,
 	[KAGE_PRINTK] = guard__printk,
 	[KAGE_KMALLOC_GENERIC] = guard_kmalloc_generic,
+        [KAGE_KMALLOC_TRACE] = guard_kmalloc_trace,
 	[KAGE_ALLOC_CHRDEV_REGION] = guard_alloc_chrdev_region,
 	[KAGE_ALT_CB_PATCH_NOPS] = guard_alt_cb_patch_nops,
 	[KAGE_CDEV_ADD] = guard_cdev_add,

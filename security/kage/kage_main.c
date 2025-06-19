@@ -58,8 +58,6 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 					unsigned long end,
 					enum mod_mem_type type, bool do_lock, gfp_t flags)
 {
-	// Keep track of all pages allocated just so we can undo the allocation if
-    // we get a failure
 	unsigned long size = end - start;
 	unsigned int nr_pages = size >> DOMAIN_PAGE_SHIFT;
 	unsigned long start_offset = start - kage->base;
@@ -68,12 +66,12 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 	void *ret = NULL;
 	struct page **tmp_pages;
 
+	/* Track pages allocated to undo the allocation on failure */
 	tmp_pages = kmalloc_array(nr_pages, sizeof(*tmp_pages), GFP_KERNEL);
 	if (!tmp_pages)
 		return ERR_PTR(-ENOMEM);
 
-	// FIXME: if we use this function in proxy/guard functions, we need a more
-    // fine-grained lock
+	// FIXME: we need a more fine-grained lock
 	if (do_lock)
 		spin_lock_irqsave(&lock, irq_flags);
 
@@ -90,9 +88,16 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 			kage->alloc_bitmap);
 	}
 
+	pgprot_t prot = PAGE_KERNEL;
+#if 0
+	if (mod_mem_type_is_text(type))
+		prot = PAGE_KERNEL_EXEC;
+#endif
+
 	/* Map pages into VM area */
-	err = vmap_pages_range_noflush(start, end, PAGE_KERNEL, tmp_pages,
+	err = vmap_pages_range_noflush(start, end, prot, tmp_pages,
 				       DOMAIN_PAGE_SHIFT);
+	flush_cache_vmap(start, end);
 	if (err)
 		goto free_pages;
 
@@ -117,6 +122,7 @@ cleanup:
  */
 void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type, gfp_t flags)
 {
+	pr_info("kage_memory_alloc: type=%d\n", type);
 	unsigned long start = ALIGN(kage->base + kage->next_open_offs,
 				    1 << DOMAIN_PAGE_SHIFT);
 	unsigned long end = ALIGN(start + size, 1 << DOMAIN_PAGE_SHIFT);
@@ -149,7 +155,6 @@ static void kage_free_closures(struct kage *kage)
 
 static int kage_init(struct kage *kage)
 {
-    /* Allocate tracking structures */
 	unsigned long nr_pages = VM_AREA_SIZE >> DOMAIN_PAGE_SHIFT;
 	int i, err;
 	static u8 next_owner_id = 0;
@@ -186,10 +191,10 @@ static int kage_init(struct kage *kage)
 	return 0;
 }
 
-#if 0
-void kage_memory_free(struct kage *kage,
-	      unsigned long vaddr)
+void kage_memory_free(struct kage *kage, void *vaddr)
 {
+//FIXME
+#if 0
 	unsigned long vaddr_offset = vaddr - kage->base;
 	unsigned long end = vaddr + size;
 	unsigned int first_page = vaddr_offset >> DOMAIN_PAGE_SHIFT;
@@ -215,9 +220,9 @@ void kage_memory_free(struct kage *kage,
 
 	spin_unlock_irqrestore(&lock, flags);
 	return 0;
+#endif
 }
 EXPORT_SYMBOL(kage_memory_free);
-#endif
 
 void kage_memory_free_all(struct kage *kage)
 {
@@ -266,38 +271,6 @@ static void init_debugfs(void)
 	}
 }
 
-struct vm_struct *kage_vm_area;
-void *vaddr_start;
-
-#if 0
-static int allocate_vmem(void)
-{
-	size_t size = 64ULL * 1024 * 1024 * 1024;
-	unsigned int order;
-	struct page *page;
-
-	kage_vm_area = get_vm_area(size, VM_MAP);
-	if (!kage_vm_area) {
-		pr_err("Failed to get VM area for 0x%zx KiB\n", size / 1024);
-		return -ENOMEM;
-	}
-	vaddr_start = kage_vm_area->addr;
-	pr_info("Reserved VM area: %px - %px (size: %lu GiB)\n",
-		vaddr_start, vaddr_start + size - 1, size >> 30);
-
-	size_t section_size = 8192;
-
-	order = get_order(section_size);
-
-	page = alloc_pages(GFP_KERNEL | __GFP_ZERO, order);
-
-	if (!page)
-		return -ENOMEM;
-
-	return 0;
-}
-#endif
-
 // Set the start addrs of the kage
 static void init_kages(void)
 {
@@ -311,7 +284,6 @@ static void init_kages(void)
 	BUG_ON(addr > ((unsigned long)vm_area->addr + vm_area->size));
 }
 
-#include "objdesc.h"
 
 static struct kage_objstorage *kage_global_objstorage;
 
@@ -419,17 +391,11 @@ u64 kage_objstorage_alloc(struct kage *kage, bool is_global,
 
 static int __init kagemodule_init(void)
 {
-	void *addr;
-	unsigned long long kernel_addr;
-	struct page *page_ptr;
-	phys_addr_t phys_addr;
-    // Convert the struct page* obtained from the correct path to a physical address.
 	unsigned long vmalloc_start_addr, vmalloc_end_addr, vmalloc_size_bytes;
 	int err;
 
 	/* Initialize context */
 	init_debugfs();
-	pr_info("%s: kage_init\n", MODULE_NAME);
 
 	spin_lock_init(&lock);
 
@@ -444,42 +410,10 @@ static int __init kagemodule_init(void)
 
 	init_kages();
 
-	addr = vmalloc(PAGE_SIZE);
-	((u8 *)addr)[0] = 'a';
-	kernel_addr = (uintptr_t)addr;
-	page_ptr = vmalloc_to_page((void *)kernel_addr);
-	phys_addr = page_to_phys(page_ptr);
-	pr_info("physical/virtual address of vmalloc page is 0x%llx/0x%llx\n",
-		phys_addr, kernel_addr);
-
-	page_ptr = vmalloc_to_page(kage_init);
-	phys_addr = page_to_phys(page_ptr);
-	pr_info("physical/virtual address of module page via vmalloc_to_page is 0x%llx/0x%llx\n",
-		phys_addr, (unsigned long long)kage_init);
-
-	page_ptr = virt_to_page(kage_init);
-	phys_addr = page_to_phys(page_ptr);
-	pr_info("physical address of module page via virt_to_page is 0x%llx\n",
-		phys_addr);
-
-	page_ptr = vmalloc_to_page(vprintk);
-	phys_addr = page_to_phys(page_ptr);
-	pr_info("physical/virtual address of kernel page via vmalloc_to_page is 0x%llx/0x%llx\n",
-		phys_addr, (unsigned long long)vprintk);
-
-	page_ptr = virt_to_page(vprintk);
-	phys_addr = page_to_phys(page_ptr);
-	pr_info("physical address of kernel page via virt_to_page is 0x%llx\n",
-		phys_addr);
-
 	vmalloc_start_addr = (unsigned long)VMALLOC_START;
 	vmalloc_end_addr = (unsigned long)VMALLOC_END;
 	vmalloc_size_bytes = vmalloc_end_addr - vmalloc_start_addr;
 
-	pr_info("kage_vmalloc_info: VMALLOC_START Address: 0x%lx\n",
-		vmalloc_start_addr);
-	pr_info("kage_vmalloc_info: VMALLOC_END Address:   0x%lx\n",
-		vmalloc_end_addr);
 	pr_info("kage_vmalloc_info: Vmalloc Area Size:     %lu bytes (%lu MB, %lu GB)\n",
 		vmalloc_size_bytes, vmalloc_size_bytes / (1024 * 1024),
 		vmalloc_size_bytes / (1024 * 1024 * 1024));
@@ -531,7 +465,8 @@ static uint64_t kage_syshandler(struct kage *kage, uint64_t sysno, uint64_t p0,
 	return f(kage, p0, p1, p2, p3, p4, p5);
 }
 
-static void *setup_lfisys(struct kage *kage)
+/* Setup the syspage at the lowest address of the guest range */
+static int setup_lfisys(struct kage *kage)
 {
 	unsigned long lfisys_end = ALIGN((kage->base + sizeof(struct LFISys)),
 					 1 << DOMAIN_PAGE_SHIFT);
@@ -539,46 +474,118 @@ static void *setup_lfisys(struct kage *kage)
 						  MOD_DATA, true, GFP_KERNEL);
 
 	if (IS_ERR(sysmem))
-		return sysmem;
+		return PTR_ERR(sysmem);
 
 	kage->sys = (struct LFISys *)kage->base;
 	kage->sys->rtcalls[0] = (uintptr_t)&lfi_syscall_entry;
 	kage->sys->rtcalls[3] = (uintptr_t)&lfi_ret;
 	kage->sys->procs = &kage->procs;
-	return kage->sys;
+	return 0;
 }
 
-struct kage *kage_create(void)
+static unsigned long find_symbol_address(const struct kage * kage,
+					 const Elf_Shdr *sechdrs,
+                                         unsigned int shnum,
+                                         const Elf_Sym *symtab,
+                                         unsigned int num_syms,
+                                         const char *strtab,
+                                         const char *target_symbol_name)
+{
+  unsigned int i;
+  const Elf_Sym *s;
+  const char *name;
+  const char *modname = kage->modname;
+
+  /* Basic validation of the data passed from the loader. */
+  if (!sechdrs || !symtab || !strtab) {
+          pr_warn("kage: Invalid ELF data provided for module '%s'\n", modname);
+          return 0;
+  }
+
+  /* Iterate through all symbols in the module's symbol table. */
+  for (i = 0; i < num_syms; i++) {
+          s = &symtab[i];
+          name = strtab + s->st_name;
+
+          if (strcmp(name, target_symbol_name) == 0) {
+                  /*
+                   * Found the symbol by name. The symbol's section index
+                   * (st_shndx) tells us which section it belongs to.
+                   */
+                  if (s->st_shndx >= shnum || s->st_shndx == SHN_UNDEF) {
+                          pr_warn("kage: Symbol '%s' in module '%s' has an invalid section index %u\n",
+                                  target_symbol_name, modname, s->st_shndx);
+                          return 0;
+                  }
+
+                  /*
+                   * The final address is the base address where the section was
+                   * loaded (sechdrs[s->st_shndx].sh_addr) plus the symbol's
+                   * offset within that section (s->st_value).
+                   *
+                   * This relies on the caller having already run the layout
+                   * logic that populates sh_addr with the final VMA.
+                   */
+                  return sechdrs[s->st_shndx].sh_addr + s->st_value;
+          }
+  }
+
+  pr_warn("kage: Symbol '%s' not found in module '%s'\n",
+          target_symbol_name, modname);
+  return 0;
+}
+
+void kage_post_move(struct kage *kage, 
+			   const Elf_Shdr *sechdrs,
+                           unsigned int shnum,
+                           const Elf_Sym *symtab,
+                           unsigned int num_syms,
+                           const char *strtab)
+{
+	unsigned long do_ret = find_symbol_address(kage, sechdrs, shnum, symtab, num_syms, strtab, "do_ret");
+	pr_info("do_ret addr=0x%lx\n", do_ret);
+	kage->exit_addr = do_ret;
+	unsigned long do_ret2 = find_symbol_address(kage, sechdrs, shnum, symtab, num_syms, strtab, "do_ret2");
+	pr_info("do_ret2 addr=0x%lx\n", do_ret2);
+}
+
+
+struct kage *kage_create(const char *modname)
 {
 	struct kage *kage;
 	int err;
 	unsigned long irq_flags;
-	void *ret;
+	bool in_cs = false;
 
-    // There's a remote chance that two calls can come in simultaneously, so
-    // serialize with a lock
+	// There's a remote chance that two calls can come in simultaneously, so
+	// serialize with a lock
 	spin_lock_irqsave(&lock, irq_flags);
+	in_cs = true;
 	kage = alloc_kage();
 	if (!kage) {
-		kage = ERR_PTR(-ENOMEM);
-		goto cleanup;
+		err = ENOMEM;
+		goto on_err;
 	}
+
 	err = kage_init(kage);
-	if (err) {
-		kage = ERR_PTR(err);
-		goto cleanup;
-	}
+	if (err)
+		goto on_err;
+
 	kage->syshandler = kage_syshandler;
 
-cleanup:
 	spin_unlock_irqrestore(&lock, irq_flags);
-	ret = setup_lfisys(kage);
-	if (IS_ERR(ret)) {
-		kage_free(kage);
-		return ret;
-	}
+	in_cs = false;
+
+	err = setup_lfisys(kage);
+	if (err) 
+		goto on_err;
 
 	return kage;
+on_err:
+	if (in_cs)
+		spin_unlock_irqrestore(&lock, irq_flags);
+	kage_free(kage);
+	return ERR_PTR(err);
 }
 EXPORT_SYMBOL(kage_create);
 
@@ -629,16 +636,11 @@ uint64_t kage_call(struct kage *kage, void * fn,
 
 	lfi_proc_init(lfiproc, kage, (int64_t)fn - kage->base, rel_stack_base,
 		      lfi_idx);
-	rv = lfi_proc_invoke(lfiproc, fn, (void *)(kage->kage_exit_addr), 
+	rv = lfi_proc_invoke(lfiproc, fn, (void *)(kage->exit_addr), 
 			     p0, p1, p2, p3, p4, p5);
 	pr_info("%s finished\n", __func__);
     // FIXME: free lfiproc
 	return rv;
-}
-
-void kage_memory_free(struct kage *kage, void *vaddr)
-{
-  // FIXME: free kage->procs
 }
 
 static ssize_t debugfs_trigger_write(struct file *debug_file_node,
