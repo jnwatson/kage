@@ -53,10 +53,10 @@
  * function calls into the kernel
  */
 
-// FIXME: add an identifier to prevent closure type confusion
+// FIXME: add an identifier to prevent type confusion
 struct kage_tasklet_closure {
 	void (*func)(unsigned long);
-        struct kage * kage;
+	struct kage *kage;
 	unsigned long data;
 	struct list_head list;
 };
@@ -73,15 +73,14 @@ static void kage_tasklet_callback(unsigned long data)
 	kage_call(closure->kage, closure->func, closure->data, 0, 0, 0, 0, 0);
 }
 
-static unsigned long
-get_key_chunk(const void *index_key, int level)
+static unsigned long get_key_chunk(const void *index_key, int level)
 {
-	return ((unsigned long)index_key >> (level * ASSOC_ARRAY_KEY_CHUNK_SIZE)) &
-		(ASSOC_ARRAY_KEY_CHUNK_SIZE - 1);
+	return ((unsigned long)index_key >>
+		(level * ASSOC_ARRAY_KEY_CHUNK_SIZE)) &
+	       (ASSOC_ARRAY_KEY_CHUNK_SIZE - 1);
 }
 
-static unsigned long
-get_object_key_chunk(const void *object, int level)
+static unsigned long get_object_key_chunk(const void *object, int level)
 {
 	const struct kage_tasklet_closure *closure = object;
 
@@ -143,9 +142,9 @@ static int kage_fops_release(struct inode *inode, struct file *file)
 }
 
 static unsigned long guard_tasklet_init(struct kage *kage, unsigned long p0,
-				  unsigned long p1, unsigned long p2,
-				  unsigned long p3, unsigned long p4,
-				  unsigned long p5)
+					unsigned long p1, unsigned long p2,
+					unsigned long p3, unsigned long p4,
+					unsigned long p5)
 {
 	struct tasklet_struct *t = (struct tasklet_struct *)p0;
 	void (*func)(unsigned long) = (void (*)(unsigned long))p1;
@@ -153,23 +152,22 @@ static unsigned long guard_tasklet_init(struct kage *kage, unsigned long p0,
 	struct kage_tasklet_closure *closure;
 	struct assoc_array_edit *edit;
 
-        if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n",  __func__);
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
-        }
+	}
 
 	closure = assoc_array_find(&kage->closures, &kage_tasklet_closure_ops,
 				   (void *)func);
 	if (closure)
 		goto finish;
 
-
 	closure = kzalloc(sizeof(*closure), GFP_KERNEL);
 	if (!closure)
 		return -ENOMEM;
 
 	closure->func = func;
-        closure->kage = kage;
+	closure->kage = kage;
 	closure->data = data;
 
 	edit = assoc_array_insert(&kage->closures, &kage_tasklet_closure_ops,
@@ -181,32 +179,32 @@ static unsigned long guard_tasklet_init(struct kage *kage, unsigned long p0,
 
 	assoc_array_apply_edit(edit);
 
-      finish:
+finish:
 	tasklet_init(t, kage_tasklet_callback, (unsigned long)closure);
 
 	return 0;
 }
 
-static unsigned long guard___tasklet_schedule(struct kage *kage, unsigned long p0,
-                                    unsigned long p1, unsigned long p2,
-                                    unsigned long p3, unsigned long p4,
-                                    unsigned long p5)
+static unsigned long
+guard___tasklet_schedule(struct kage *kage, unsigned long p0, unsigned long p1,
+			 unsigned long p2, unsigned long p3, unsigned long p4,
+			 unsigned long p5)
 {
-  struct tasklet_struct *t = (struct tasklet_struct *)p0;
+	struct tasklet_struct *t = (struct tasklet_struct *)p0;
 
-  if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
-          pr_err("%s: guest pointer argument out of bounds\n", __func__);
-          return -1;
-  }
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
+		return -1;
+	}
 
-  __tasklet_schedule(t);
-  return 0;
+	__tasklet_schedule(t);
+	return 0;
 }
 
 static unsigned long guard__printk(struct kage *kage, unsigned long p0,
-			    unsigned long p1, unsigned long p2,
-			    unsigned long p3, unsigned long p4,
-			    unsigned long p5)
+				   unsigned long p1, unsigned long p2,
+				   unsigned long p3, unsigned long p4,
+				   unsigned long p5)
 {
 	char *fmt = (char *)p0;
 	va_list *pargs = (va_list *)p1;
@@ -215,47 +213,46 @@ static unsigned long guard__printk(struct kage *kage, unsigned long p0,
 	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_info("kage->base: %lx\n", kage->base);
 		pr_info("p0: %lx\n", p0);
-		pr_err("%s: guest pointer argument out of bounds\n",  __func__);
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
-        }
-        if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n",  __func__);
+	}
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
-        }
+	}
 
 	rv = vprintk(fmt, *pargs);
 	return rv;
 }
 
 static unsigned long guard_kmalloc_generic(struct kage *kage, unsigned long p0,
-			      unsigned long p1, unsigned long p2,
-			      unsigned long p3, unsigned long p4,
-			      unsigned long p5)
+					   unsigned long p1, unsigned long p2,
+					   unsigned long p3, unsigned long p4,
+					   unsigned long p5)
 {
 	size_t size = (size_t)p0;
 	gfp_t flags = (gfp_t)p1;
 
-	return (unsigned long)kage_memory_alloc(kage, size, MOD_DATA,
-                                                flags);
+	return (unsigned long)kage_memory_alloc(kage, size, MOD_DATA, flags);
 }
 
 static unsigned long guard_kmalloc_trace(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
-{
-  gfp_t flags = (gfp_t)p1;
-  size_t size = (size_t)p2;
-
-  // We ignore p0 (cache) parameter since we want to use the host's
-
-  return (unsigned long)kmalloc(size, flags);
-}
-
-static unsigned long guard_alloc_chrdev_region(struct kage *kage, unsigned long p0,
 					 unsigned long p1, unsigned long p2,
 					 unsigned long p3, unsigned long p4,
 					 unsigned long p5)
+{
+	gfp_t flags = (gfp_t)p1;
+	size_t size = (size_t)p2;
+
+	// We ignore p0 (cache) parameter since we want to use the host's
+
+	return (unsigned long)kmalloc(size, flags);
+}
+
+static unsigned long
+guard_alloc_chrdev_region(struct kage *kage, unsigned long p0, unsigned long p1,
+			  unsigned long p2, unsigned long p3, unsigned long p4,
+			  unsigned long p5)
 {
 	dev_t *dev = (dev_t *)p0;
 	unsigned baseminor = (unsigned)p1;
@@ -263,37 +260,38 @@ static unsigned long guard_alloc_chrdev_region(struct kage *kage, unsigned long 
 	const char *name = (const char *)p3;
 
 	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n",  __func__);
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
 	if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n",  __func__);
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
 
 	return alloc_chrdev_region(dev, baseminor, count, name);
 }
 
-static unsigned long guard_alt_cb_patch_nops(struct kage *kage, unsigned long p0,
-					 unsigned long p1, unsigned long p2,
-					 unsigned long p3, unsigned long p4,
-					 unsigned long p5)
+static unsigned long guard_alt_cb_patch_nops(struct kage *kage,
+					     unsigned long p0, unsigned long p1,
+					     unsigned long p2, unsigned long p3,
+					     unsigned long p4, unsigned long p5)
 {
-	alt_cb_patch_nops((struct alt_instr *)p0, (__le32 *)p1, (__le32 *)p2, p3);
+	alt_cb_patch_nops((struct alt_instr *)p0, (__le32 *)p1, (__le32 *)p2,
+			  p3);
 	return 0;
 }
 
 static unsigned long guard_cdev_add(struct kage *kage, unsigned long p0,
-				  unsigned long p1, unsigned long p2,
-				  unsigned long p3, unsigned long p4,
-				  unsigned long p5)
+				    unsigned long p1, unsigned long p2,
+				    unsigned long p3, unsigned long p4,
+				    unsigned long p5)
 {
 	struct cdev *p = (struct cdev *)p0;
 	dev_t dev = (dev_t)p1;
 	unsigned count = (unsigned)p2;
 
 	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n",  __func__);
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
 
@@ -301,15 +299,16 @@ static unsigned long guard_cdev_add(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_cdev_del(struct kage *kage, unsigned long p0,
-				  unsigned long p1, unsigned long p2,
-				  unsigned long p3, unsigned long p4,
-				  unsigned long p5)
+				    unsigned long p1, unsigned long p2,
+				    unsigned long p3, unsigned long p4,
+				    unsigned long p5)
 {
 	struct cdev *cdev = (struct cdev *)p0;
 	struct file_operations *host_fops;
 	struct kage_fops_closure *closure;
 
-	if ((unsigned long)cdev < kage->base || (unsigned long)cdev >= kage->base + KAGE_GUEST_SIZE) {
+	if ((unsigned long)cdev < kage->base ||
+	    (unsigned long)cdev >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
@@ -326,9 +325,9 @@ static unsigned long guard_cdev_del(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_cdev_init(struct kage *kage, unsigned long p0,
-				  unsigned long p1, unsigned long p2,
-				  unsigned long p3, unsigned long p4,
-				  unsigned long p5)
+				     unsigned long p1, unsigned long p2,
+				     unsigned long p3, unsigned long p4,
+				     unsigned long p5)
 {
 	struct cdev *cdev = (struct cdev *)p0;
 	const struct file_operations *guest_fops =
@@ -376,9 +375,9 @@ static unsigned long guard_cdev_init(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_filp_open(struct kage *kage, unsigned long p0,
-				  unsigned long p1, unsigned long p2,
-				  unsigned long p3, unsigned long p4,
-				  unsigned long p5)
+				     unsigned long p1, unsigned long p2,
+				     unsigned long p3, unsigned long p4,
+				     unsigned long p5)
 {
 	const char *filename = (const char *)p0;
 	int flags = (int)p1;
@@ -393,9 +392,9 @@ static unsigned long guard_filp_open(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_filp_close(struct kage *kage, unsigned long p0,
-				  unsigned long p1, unsigned long p2,
-				  unsigned long p3, unsigned long p4,
-				  unsigned long p5)
+				      unsigned long p1, unsigned long p2,
+				      unsigned long p3, unsigned long p4,
+				      unsigned long p5)
 {
 	struct file *filp = (struct file *)p0;
 	fl_owner_t id = (fl_owner_t)p1;
@@ -404,28 +403,40 @@ static unsigned long guard_filp_close(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_device_create(struct kage *kage, unsigned long p0,
-				  unsigned long p1, unsigned long p2,
-				  unsigned long p3, unsigned long p4,
-				  unsigned long p5)
+					 unsigned long p1, unsigned long p2,
+					 unsigned long p3, unsigned long p4,
+					 unsigned long p5)
 {
-	struct class *class = (struct class *)p0;
-	struct device *parent = (struct device *)p1;
+	u64 classdesc = p0;
+	u64 parentdesc = p1;
 	dev_t devt = (dev_t)p2;
 	void *drvdata = (void *)p3;
-	const char *fmt = (const char *)p4;
+	const char *name = (const char *)p4;
+
+	struct class *class = kage_obj_get(kage, classdesc, KAGE_ODTYPE_CLASS);
+	if (IS_ERR_OR_NULL(class))
+		return class ? (unsigned long)class : -EINVAL;
+
+	struct device *parent =
+		kage_obj_get(kage, parentdesc, KAGE_ODTYPE_DEVICE);
+	if (IS_ERR(parent))
+		return (unsigned long)parent;
 
 	if (p4 < kage->base || p4 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-
-	return (unsigned long)device_create(class, parent, devt, drvdata, fmt);
+	struct device *device =
+		device_create(class, parent, devt, drvdata, name);
+	if (IS_ERR(device))
+		return (unsigned long)device;
+	return kage_objstorage_alloc(kage, true, KAGE_ODTYPE_DEVICE, device);
 }
 
 static unsigned long guard_device_destroy(struct kage *kage, unsigned long p0,
-				  unsigned long p1, unsigned long p2,
-				  unsigned long p3, unsigned long p4,
-				  unsigned long p5)
+					  unsigned long p1, unsigned long p2,
+					  unsigned long p3, unsigned long p4,
+					  unsigned long p5)
 {
 	struct class *class = (struct class *)p0;
 	dev_t devt = (dev_t)p1;
@@ -435,9 +446,9 @@ static unsigned long guard_device_destroy(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_class_create(struct kage *kage, unsigned long p0,
-				  unsigned long p1, unsigned long p2,
-				  unsigned long p3, unsigned long p4,
-				  unsigned long p5)
+					unsigned long p1, unsigned long p2,
+					unsigned long p3, unsigned long p4,
+					unsigned long p5)
 {
 	const char *name = (const char *)p0;
 
@@ -446,24 +457,31 @@ static unsigned long guard_class_create(struct kage *kage, unsigned long p0,
 		return -1;
 	}
 
-	return (unsigned long)class_create(name);
+	struct class *class = class_create(name);
+	if (IS_ERR(class))
+		return (unsigned long)class;
+	return kage_objstorage_alloc(kage, true, KAGE_ODTYPE_CLASS, class);
 }
 
 static unsigned long guard_class_destroy(struct kage *kage, unsigned long p0,
-				  unsigned long p1, unsigned long p2,
-				  unsigned long p3, unsigned long p4,
-				  unsigned long p5)
+					 unsigned long p1, unsigned long p2,
+					 unsigned long p3, unsigned long p4,
+					 unsigned long p5)
 {
-	struct class *cls = (struct class *)p0;
+	u64 clsdesc = p0;
+	struct class *cls = kage_obj_get(kage, clsdesc, KAGE_ODTYPE_CLASS);
+	if (IS_ERR_OR_NULL(cls))
+		pr_err("%s: invalid class parameter\n", __func__);
+	return 0;
 
 	class_destroy(cls);
 	return 0;
 }
 
-static unsigned long guard_debugfs_create_dir(struct kage *kage, unsigned long p0,
-					  unsigned long p1, unsigned long p2,
-					  unsigned long p3, unsigned long p4,
-					  unsigned long p5)
+static unsigned long
+guard_debugfs_create_dir(struct kage *kage, unsigned long p0, unsigned long p1,
+			 unsigned long p2, unsigned long p3, unsigned long p4,
+			 unsigned long p5)
 {
 	const char *name = (const char *)p0;
 	struct dentry *parent = (struct dentry *)p1;
@@ -476,10 +494,10 @@ static unsigned long guard_debugfs_create_dir(struct kage *kage, unsigned long p
 	return (unsigned long)debugfs_create_dir(name, parent);
 }
 
-static unsigned long guard_debugfs_create_file(struct kage *kage, unsigned long p0,
-					   unsigned long p1, unsigned long p2,
-					   unsigned long p3, unsigned long p4,
-					   unsigned long p5)
+static unsigned long
+guard_debugfs_create_file(struct kage *kage, unsigned long p0, unsigned long p1,
+			  unsigned long p2, unsigned long p3, unsigned long p4,
+			  unsigned long p5)
 {
 	const char *name = (const char *)p0;
 	umode_t mode = (umode_t)p1;
@@ -492,7 +510,8 @@ static unsigned long guard_debugfs_create_file(struct kage *kage, unsigned long 
 		return -1;
 	}
 
-	return (unsigned long)debugfs_create_file(name, mode, parent, data, fops);
+	return (unsigned long)debugfs_create_file(name, mode, parent, data,
+						  fops);
 }
 
 static unsigned long guard_debugfs_remove(struct kage *kage, unsigned long p0,
@@ -506,10 +525,9 @@ static unsigned long guard_debugfs_remove(struct kage *kage, unsigned long p0,
 	return 0;
 }
 
-static unsigned long guard_delayed_work_timer_fn(struct kage *kage, unsigned long p0,
-					     unsigned long p1, unsigned long p2,
-					     unsigned long p3, unsigned long p4,
-					     unsigned long p5)
+static unsigned long guard_delayed_work_timer_fn(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	struct timer_list *t = (struct timer_list *)p0;
 
@@ -522,10 +540,10 @@ static unsigned long guard_delayed_work_timer_fn(struct kage *kage, unsigned lon
 	return 0;
 }
 
-static unsigned long guard_dev_driver_string(struct kage *kage, unsigned long p0,
-					 unsigned long p1, unsigned long p2,
-					 unsigned long p3, unsigned long p4,
-					 unsigned long p5)
+static unsigned long guard_dev_driver_string(struct kage *kage,
+					     unsigned long p0, unsigned long p1,
+					     unsigned long p2, unsigned long p3,
+					     unsigned long p4, unsigned long p5)
 {
 	const struct device *dev = (const struct device *)p0;
 
@@ -537,89 +555,75 @@ static unsigned long guard_dev_driver_string(struct kage *kage, unsigned long p0
 	return (unsigned long)dev_driver_string(dev);
 }
 
-static unsigned long guard__dev_err(struct kage *kage, unsigned long p0,
-				    unsigned long p1, unsigned long p2,
-				    unsigned long p3, unsigned long p4,
-				    unsigned long p5)
-{
-	const struct device *dev = (const struct device *)p0;
-	const char *fmt = (const char *)p1;
-	va_list *pargs = (va_list *)p2;
-
-	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		return -1;
-	}
-	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		return -1;
-	}
-	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		return -1;
-	}
-
-	_dev_err(dev, fmt, *pargs);
-	return 0;
-}
-
-static unsigned long guard__dev_info(struct kage *kage, unsigned long p0,
-				     unsigned long p1, unsigned long p2,
-				     unsigned long p3, unsigned long p4,
-				     unsigned long p5)
-{
-	const struct device *dev = (const struct device *)p0;
-	const char *fmt = (const char *)p1;
-	va_list *pargs = (va_list *)p2;
-
-	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		return -1;
-	}
-	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		return -1;
-	}
-	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		return -1;
+#define DEFINE_DEV_LOG_GUARD(level)                                          \
+	static unsigned long guard__dev_##level(                             \
+		struct kage *kage, unsigned long p0, unsigned long p1,       \
+		unsigned long p2, unsigned long p3, unsigned long p4,        \
+		unsigned long p5)                                            \
+	{                                                                    \
+		u64 devdesc = p0;                                            \
+		const char *fmt = (const char *)p1;                          \
+		va_list *pargs = (va_list *)p2;                              \
+		struct va_format vaf;                                        \
+		const struct device *device =                                \
+			kage_obj_get(kage, devdesc, KAGE_ODTYPE_DEVICE);     \
+		if (IS_ERR_OR_NULL(device)) {                                \
+			pr_err("%s: invalid device parameter\n", __func__);  \
+			return 0;                                            \
+		}                                                            \
+		if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) { \
+			pr_err("%s: guest pointer argument out of bounds\n", \
+			       __func__);                                    \
+			return -1;                                           \
+		}                                                            \
+		if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) { \
+			pr_err("%s: guest pointer argument out of bounds\n", \
+			       __func__);                                    \
+			return -1;                                           \
+		}                                                            \
+		vaf.fmt = fmt;                                               \
+		vaf.va = pargs;                                              \
+		_dev_##level(device, "%pV", &vaf);                           \
+		return 0;                                                    \
 	}
 
-	_dev_info(dev, fmt, *pargs);
-	return 0;
-}
+DEFINE_DEV_LOG_GUARD(emerg)
+DEFINE_DEV_LOG_GUARD(alert)
+DEFINE_DEV_LOG_GUARD(crit)
+DEFINE_DEV_LOG_GUARD(notice)
+DEFINE_DEV_LOG_GUARD(err)
+DEFINE_DEV_LOG_GUARD(warn)
+DEFINE_DEV_LOG_GUARD(info)
 
 static unsigned long guard_devm_kmalloc(struct kage *kage, unsigned long p0,
 					unsigned long p1, unsigned long p2,
 					unsigned long p3, unsigned long p4,
 					unsigned long p5)
 {
-	struct device *dev = (struct device *)p0;
+	//u64 devdesc = p0;
 	size_t size = (size_t)p1;
 	gfp_t gfp = (gfp_t)p2;
-
-	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		return -1;
-	}
-
-	return (unsigned long)devm_kmalloc(dev, size, gfp);
+	//struct device *dev = kage_obj_get(kage, devdesc, KAGE_ODTYPE_DEVICE);
+	// FIXME: need to implement our own version of devm_kmalloc that uses
+	// kage_memory_alloc
+	//return (unsigned long)devm_kmalloc(dev, size, gfp);
+	return (unsigned long)kage_memory_alloc(kage, size, MOD_DATA, gfp);
 }
-
 static unsigned long guard_dev_printk_emit(struct kage *kage, unsigned long p0,
 					   unsigned long p1, unsigned long p2,
 					   unsigned long p3, unsigned long p4,
 					   unsigned long p5)
 {
 	int level = (int)p0;
-	const struct device *dev = (const struct device *)p1;
+	u64 devdesc = p1;
 	const char *fmt = (const char *)p2;
 	va_list *pargs = (va_list *)p3;
 
-	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		return -1;
-	}
+	const struct device *dev =
+		kage_obj_get(kage, devdesc, KAGE_ODTYPE_DEVICE);
+	if (IS_ERR_OR_NULL(dev))
+		return dev ? (unsigned long)dev : -EINVAL;
+
 	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
@@ -632,36 +636,10 @@ static unsigned long guard_dev_printk_emit(struct kage *kage, unsigned long p0,
 	return dev_printk_emit(level, dev, fmt, *pargs);
 }
 
-static unsigned long guard__dev_warn(struct kage *kage, unsigned long p0,
-				     unsigned long p1, unsigned long p2,
-				     unsigned long p3, unsigned long p4,
-				     unsigned long p5)
-{
-	const struct device *dev = (const struct device *)p0;
-	const char *fmt = (const char *)p1;
-	va_list *pargs = (va_list *)p2;
-
-	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		return -1;
-	}
-	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		return -1;
-	}
-	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		return -1;
-	}
-
-	_dev_warn(dev, fmt, *pargs);
-	return 0;
-}
-
-static unsigned long guard_down_interruptible(struct kage *kage, unsigned long p0,
-					      unsigned long p1, unsigned long p2,
-					      unsigned long p3, unsigned long p4,
-					      unsigned long p5)
+static unsigned long
+guard_down_interruptible(struct kage *kage, unsigned long p0, unsigned long p1,
+			 unsigned long p2, unsigned long p3, unsigned long p4,
+			 unsigned long p5)
 {
 	struct semaphore *sem = (struct semaphore *)p0;
 
@@ -675,10 +653,10 @@ static unsigned long guard_down_interruptible(struct kage *kage, unsigned long p
 
 #include <linux/dynamic_debug.h>
 
-static unsigned long guard___dynamic_dev_dbg(struct kage *kage, unsigned long p0,
-                                       unsigned long p1, unsigned long p2,
-                                       unsigned long p3, unsigned long p4,
-                                       unsigned long p5)
+static unsigned long guard___dynamic_dev_dbg(struct kage *kage,
+					     unsigned long p0, unsigned long p1,
+					     unsigned long p2, unsigned long p3,
+					     unsigned long p4, unsigned long p5)
 {
 #if defined(CONFIG_DYNAMIC_DEBUG) || \
 	(defined(CONFIG_DYNAMIC_DEBUG_CORE) && defined(DYNAMIC_DEBUG_MODULE))
@@ -691,27 +669,21 @@ static unsigned long guard___dynamic_dev_dbg(struct kage *kage, unsigned long p0
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		return -1;
-	}
 	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	struct va_format vaf = {fmt, va_args};
-
+	struct va_format vaf = { fmt, va_args };
 	__dynamic_dev_dbg(descriptor, dev, "%pV", &vaf);
 	return 0;
 #else
 	return -1;
 #endif
 }
-
 static unsigned long guard_fortify_panic(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					 unsigned long p1, unsigned long p2,
+					 unsigned long p3, unsigned long p4,
+					 unsigned long p5)
 {
 	const char *name = (const char *)p0;
 
@@ -724,10 +696,10 @@ static unsigned long guard_fortify_panic(struct kage *kage, unsigned long p0,
 	return 0;
 }
 
-static unsigned long guard_generic_file_llseek(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long
+guard_generic_file_llseek(struct kage *kage, unsigned long p0, unsigned long p1,
+			  unsigned long p2, unsigned long p3, unsigned long p4,
+			  unsigned long p5)
 {
 	struct file *file = (struct file *)p0;
 	loff_t offset = (loff_t)p1;
@@ -741,10 +713,10 @@ static unsigned long guard_generic_file_llseek(struct kage *kage, unsigned long 
 	return generic_file_llseek(file, offset, whence);
 }
 
-static unsigned long guard_gen_pool_add_owner(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long
+guard_gen_pool_add_owner(struct kage *kage, unsigned long p0, unsigned long p1,
+			 unsigned long p2, unsigned long p3, unsigned long p4,
+			 unsigned long p5)
 {
 	struct gen_pool *pool = (struct gen_pool *)p0;
 	phys_addr_t addr = (phys_addr_t)p1;
@@ -759,10 +731,9 @@ static unsigned long guard_gen_pool_add_owner(struct kage *kage, unsigned long p
 	return gen_pool_add_owner(pool, 0, addr, size, -1, owner);
 }
 
-static unsigned long guard_gen_pool_alloc_algo_owner(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_gen_pool_alloc_algo_owner(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	struct gen_pool *pool = (struct gen_pool *)p0;
 	size_t size = (size_t)p1;
@@ -779,9 +750,9 @@ static unsigned long guard_gen_pool_alloc_algo_owner(struct kage *kage, unsigned
 }
 
 static unsigned long guard_gen_pool_create(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					   unsigned long p1, unsigned long p2,
+					   unsigned long p3, unsigned long p4,
+					   unsigned long p5)
 {
 	int min_alloc_order = (int)p0;
 	int nid = (int)p1;
@@ -790,9 +761,9 @@ static unsigned long guard_gen_pool_create(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_gen_pool_destroy(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					    unsigned long p1, unsigned long p2,
+					    unsigned long p3, unsigned long p4,
+					    unsigned long p5)
 {
 	struct gen_pool *pool = (struct gen_pool *)p0;
 
@@ -806,9 +777,9 @@ static unsigned long guard_gen_pool_destroy(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_init_timer_key(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					  unsigned long p1, unsigned long p2,
+					  unsigned long p3, unsigned long p4,
+					  unsigned long p5)
 {
 	struct timer_list *timer = (struct timer_list *)p0;
 	const char *name = (const char *)p1;
@@ -833,9 +804,9 @@ static unsigned long guard_init_timer_key(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_kfree(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				 unsigned long p1, unsigned long p2,
+				 unsigned long p3, unsigned long p4,
+				 unsigned long p5)
 {
 	const void *x = (const void *)p0;
 
@@ -849,9 +820,9 @@ static unsigned long guard_kfree(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_klist_add_head(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					  unsigned long p1, unsigned long p2,
+					  unsigned long p3, unsigned long p4,
+					  unsigned long p5)
 {
 	struct klist_node *n = (struct klist_node *)p0;
 	struct klist *k = (struct klist *)p1;
@@ -870,9 +841,9 @@ static unsigned long guard_klist_add_head(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_klist_add_tail(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					  unsigned long p1, unsigned long p2,
+					  unsigned long p3, unsigned long p4,
+					  unsigned long p5)
 {
 	struct klist_node *n = (struct klist_node *)p0;
 	struct klist *k = (struct klist *)p1;
@@ -891,9 +862,9 @@ static unsigned long guard_klist_add_tail(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_klist_init(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				      unsigned long p1, unsigned long p2,
+				      unsigned long p3, unsigned long p4,
+				      unsigned long p5)
 {
 	struct klist *k = (struct klist *)p0;
 	void (*get)(struct klist_node *) = (void (*)(struct klist_node *))p1;
@@ -909,9 +880,9 @@ static unsigned long guard_klist_init(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_klist_iter_exit(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					   unsigned long p1, unsigned long p2,
+					   unsigned long p3, unsigned long p4,
+					   unsigned long p5)
 {
 	struct klist_iter *i = (struct klist_iter *)p0;
 
@@ -925,9 +896,9 @@ static unsigned long guard_klist_iter_exit(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_klist_iter_init(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					   unsigned long p1, unsigned long p2,
+					   unsigned long p3, unsigned long p4,
+					   unsigned long p5)
 {
 	struct klist *k = (struct klist *)p0;
 	struct klist_iter *i = (struct klist_iter *)p1;
@@ -946,9 +917,9 @@ static unsigned long guard_klist_iter_init(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_klist_next(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				      unsigned long p1, unsigned long p2,
+				      unsigned long p3, unsigned long p4,
+				      unsigned long p5)
 {
 	struct klist_iter *i = (struct klist_iter *)p0;
 
@@ -961,9 +932,9 @@ static unsigned long guard_klist_next(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_klist_remove(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					unsigned long p1, unsigned long p2,
+					unsigned long p3, unsigned long p4,
+					unsigned long p5)
 {
 	struct klist_node *n = (struct klist_node *)p0;
 
@@ -977,9 +948,9 @@ static unsigned long guard_klist_remove(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_kstrdup(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				   unsigned long p1, unsigned long p2,
+				   unsigned long p3, unsigned long p4,
+				   unsigned long p5)
 {
 	const char *s = (const char *)p0;
 	gfp_t gfp = (gfp_t)p1;
@@ -993,9 +964,9 @@ static unsigned long guard_kstrdup(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_kstrtoint(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				     unsigned long p1, unsigned long p2,
+				     unsigned long p3, unsigned long p4,
+				     unsigned long p5)
 {
 	const char *s = (const char *)p0;
 	unsigned int base = (unsigned int)p1;
@@ -1013,28 +984,25 @@ static unsigned long guard_kstrtoint(struct kage *kage, unsigned long p0,
 	return kstrtoint(s, base, res);
 }
 
-static unsigned long guard_ktime_get_real_seconds(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_ktime_get_real_seconds(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	return ktime_get_real_seconds();
 }
 
-static unsigned long guard_ktime_get_with_offset(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_ktime_get_with_offset(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	enum tk_offsets offs = (enum tk_offsets)p0;
 
 	return (unsigned long)ktime_get_with_offset(offs);
 }
 
-static unsigned long guard_list_add_valid_or_report(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_list_add_valid_or_report(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	struct list_head *new = (struct list_head *)p0;
 	struct list_head *prev = (struct list_head *)p1;
@@ -1056,10 +1024,9 @@ static unsigned long guard_list_add_valid_or_report(struct kage *kage, unsigned 
 	return __list_add_valid_or_report(new, prev, next);
 }
 
-static unsigned long guard_list_del_entry_valid_or_report(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_list_del_entry_valid_or_report(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	struct list_head *entry = (struct list_head *)p0;
 
@@ -1073,9 +1040,9 @@ static unsigned long guard_list_del_entry_valid_or_report(struct kage *kage, uns
 
 #ifdef CONFIG_GOOGLE_LOGBUFFER
 static unsigned long guard_logbuffer_log(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					 unsigned long p1, unsigned long p2,
+					 unsigned long p3, unsigned long p4,
+					 unsigned long p5)
 {
 	int level = (int)p0;
 	const char *msg = (const char *)p1;
@@ -1090,9 +1057,9 @@ static unsigned long guard_logbuffer_log(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_logbuffer_vlog(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					  unsigned long p1, unsigned long p2,
+					  unsigned long p3, unsigned long p4,
+					  unsigned long p5)
 {
 	int level = (int)p0;
 	const char *fmt = (const char *)p1;
@@ -1114,9 +1081,9 @@ static unsigned long guard_logbuffer_vlog(struct kage *kage, unsigned long p0,
 #endif
 
 static unsigned long guard_memcpy(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				  unsigned long p1, unsigned long p2,
+				  unsigned long p3, unsigned long p4,
+				  unsigned long p5)
 {
 	void *dest = (void *)p0;
 	const void *src = (const void *)p1;
@@ -1136,9 +1103,9 @@ static unsigned long guard_memcpy(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_memset(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				  unsigned long p1, unsigned long p2,
+				  unsigned long p3, unsigned long p4,
+				  unsigned long p5)
 {
 	void *s = (void *)p0;
 	int c = (int)p1;
@@ -1154,9 +1121,9 @@ static unsigned long guard_memset(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_msleep(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				  unsigned long p1, unsigned long p2,
+				  unsigned long p3, unsigned long p4,
+				  unsigned long p5)
 {
 	unsigned int msecs = (unsigned int)p0;
 
@@ -1165,9 +1132,9 @@ static unsigned long guard_msleep(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_mutex_init(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				      unsigned long p1, unsigned long p2,
+				      unsigned long p3, unsigned long p4,
+				      unsigned long p5)
 {
 	struct mutex *lock = (struct mutex *)p0;
 	const char *name = (const char *)p1;
@@ -1191,9 +1158,9 @@ static unsigned long guard_mutex_init(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_mutex_lock(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				      unsigned long p1, unsigned long p2,
+				      unsigned long p3, unsigned long p4,
+				      unsigned long p5)
 {
 	struct mutex *lock = (struct mutex *)p0;
 
@@ -1207,9 +1174,9 @@ static unsigned long guard_mutex_lock(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_mutex_unlock(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					unsigned long p1, unsigned long p2,
+					unsigned long p3, unsigned long p4,
+					unsigned long p5)
 {
 	struct mutex *lock = (struct mutex *)p0;
 
@@ -1223,9 +1190,9 @@ static unsigned long guard_mutex_unlock(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_nvmem_device_put(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					    unsigned long p1, unsigned long p2,
+					    unsigned long p3, unsigned long p4,
+					    unsigned long p5)
 {
 #ifdef CONFIG_NVMEM
 	struct nvmem_device *nvmem = (struct nvmem_device *)p0;
@@ -1242,10 +1209,10 @@ static unsigned long guard_nvmem_device_put(struct kage *kage, unsigned long p0,
 #endif
 }
 
-static unsigned long guard_nvmem_device_read(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_nvmem_device_read(struct kage *kage,
+					     unsigned long p0, unsigned long p1,
+					     unsigned long p2, unsigned long p3,
+					     unsigned long p4, unsigned long p5)
 {
 #ifdef CONFIG_NVMEM
 	struct nvmem_device *nvmem = (struct nvmem_device *)p0;
@@ -1268,10 +1235,10 @@ static unsigned long guard_nvmem_device_read(struct kage *kage, unsigned long p0
 #endif
 }
 
-static unsigned long guard_nvmem_device_write(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long
+guard_nvmem_device_write(struct kage *kage, unsigned long p0, unsigned long p1,
+			 unsigned long p2, unsigned long p3, unsigned long p4,
+			 unsigned long p5)
 {
 #ifdef CONFIG_NVMEM
 	struct nvmem_device *nvmem = (struct nvmem_device *)p0;
@@ -1294,10 +1261,10 @@ static unsigned long guard_nvmem_device_write(struct kage *kage, unsigned long p
 #endif
 }
 
-static unsigned long guard_of_find_node_by_name(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long
+guard_of_find_node_by_name(struct kage *kage, unsigned long p0,
+			   unsigned long p1, unsigned long p2, unsigned long p3,
+			   unsigned long p4, unsigned long p5)
 {
 	struct device_node *from = (struct device_node *)p0;
 	const char *name = (const char *)p1;
@@ -1314,10 +1281,9 @@ static unsigned long guard_of_find_node_by_name(struct kage *kage, unsigned long
 	return (unsigned long)of_find_node_by_name(from, name);
 }
 
-static unsigned long guard_of_find_node_by_phandle(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_of_find_node_by_phandle(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	phandle handle = (phandle)p0;
 
@@ -1325,9 +1291,9 @@ static unsigned long guard_of_find_node_by_phandle(struct kage *kage, unsigned l
 }
 
 static unsigned long guard_of_find_property(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					    unsigned long p1, unsigned long p2,
+					    unsigned long p3, unsigned long p4,
+					    unsigned long p5)
 {
 	const struct device_node *np = (const struct device_node *)p0;
 	const char *name = (const char *)p1;
@@ -1349,10 +1315,10 @@ static unsigned long guard_of_find_property(struct kage *kage, unsigned long p0,
 	return (unsigned long)of_find_property(np, name, lenp);
 }
 
-static unsigned long guard_of_get_child_by_name(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long
+guard_of_get_child_by_name(struct kage *kage, unsigned long p0,
+			   unsigned long p1, unsigned long p2, unsigned long p3,
+			   unsigned long p4, unsigned long p5)
 {
 	const struct device_node *node = (const struct device_node *)p0;
 	const char *name = (const char *)p1;
@@ -1369,10 +1335,10 @@ static unsigned long guard_of_get_child_by_name(struct kage *kage, unsigned long
 	return (unsigned long)of_get_child_by_name(node, name);
 }
 
-static unsigned long guard_of_get_next_child(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_of_get_next_child(struct kage *kage,
+					     unsigned long p0, unsigned long p1,
+					     unsigned long p2, unsigned long p3,
+					     unsigned long p4, unsigned long p5)
 {
 	const struct device_node *node = (const struct device_node *)p0;
 	struct device_node *prev = (struct device_node *)p1;
@@ -1390,9 +1356,9 @@ static unsigned long guard_of_get_next_child(struct kage *kage, unsigned long p0
 }
 
 static unsigned long guard_of_get_property(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					   unsigned long p1, unsigned long p2,
+					   unsigned long p3, unsigned long p4,
+					   unsigned long p5)
 {
 	const struct device_node *np = (const struct device_node *)p0;
 	const char *name = (const char *)p1;
@@ -1414,10 +1380,10 @@ static unsigned long guard_of_get_property(struct kage *kage, unsigned long p0,
 	return (unsigned long)of_get_property(np, name, lenp);
 }
 
-static unsigned long guard_of_nvmem_device_get(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long
+guard_of_nvmem_device_get(struct kage *kage, unsigned long p0, unsigned long p1,
+			  unsigned long p2, unsigned long p3, unsigned long p4,
+			  unsigned long p5)
 {
 #ifdef CONFIG_NVMEM
 	struct device_node *np = (struct device_node *)p0;
@@ -1438,10 +1404,9 @@ static unsigned long guard_of_nvmem_device_get(struct kage *kage, unsigned long 
 #endif
 }
 
-static unsigned long guard_of_property_count_elems_of_size(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_of_property_count_elems_of_size(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	const struct device_node *np = (const struct device_node *)p0;
 	const char *propname = (const char *)p1;
@@ -1459,10 +1424,9 @@ static unsigned long guard_of_property_count_elems_of_size(struct kage *kage, un
 	return of_property_count_elems_of_size(np, propname, elem_size);
 }
 
-static unsigned long guard_of_property_read_string(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_of_property_read_string(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	const struct device_node *np = (const struct device_node *)p0;
 	const char *propname = (const char *)p1;
@@ -1484,16 +1448,15 @@ static unsigned long guard_of_property_read_string(struct kage *kage, unsigned l
 	return of_property_read_string(np, propname, out_string);
 }
 
-static unsigned long guard_of_property_read_string_helper(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_of_property_read_string_helper(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	struct device_node *np = (struct device_node *)p0;
 	const char *propname = (const char *)p1;
 	const char **out_string = (const char **)p2;
 	size_t sz = (size_t)p3;
-        int index = (int)p4;
+	int index = (int)p4;
 
 	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
@@ -1508,13 +1471,13 @@ static unsigned long guard_of_property_read_string_helper(struct kage *kage, uns
 		return -1;
 	}
 
-	return of_property_read_string_helper(np, propname, out_string, sz, index);
+	return of_property_read_string_helper(np, propname, out_string, sz,
+					      index);
 }
 
-static unsigned long guard_of_property_read_variable_u16_array(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_of_property_read_variable_u16_array(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	const struct device_node *np = (const struct device_node *)p0;
 	const char *propname = (const char *)p1;
@@ -1535,13 +1498,13 @@ static unsigned long guard_of_property_read_variable_u16_array(struct kage *kage
 		return -1;
 	}
 
-	return of_property_read_variable_u16_array(np, propname, out_values, sz_min, sz_max);
+	return of_property_read_variable_u16_array(np, propname, out_values,
+						   sz_min, sz_max);
 }
 
-static unsigned long guard_of_property_read_variable_u32_array(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_of_property_read_variable_u32_array(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	const struct device_node *np = (const struct device_node *)p0;
 	const char *propname = (const char *)p1;
@@ -1562,13 +1525,14 @@ static unsigned long guard_of_property_read_variable_u32_array(struct kage *kage
 		return -1;
 	}
 
-	return of_property_read_variable_u32_array(np, propname, out_values, sz_min, sz_max);
+	return of_property_read_variable_u32_array(np, propname, out_values,
+						   sz_min, sz_max);
 }
 
 static unsigned long guard_pm_relax(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				    unsigned long p1, unsigned long p2,
+				    unsigned long p3, unsigned long p4,
+				    unsigned long p5)
 {
 	struct wakeup_source *ws = (struct wakeup_source *)p0;
 
@@ -1582,9 +1546,9 @@ static unsigned long guard_pm_relax(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_pm_stay_awake(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					 unsigned long p1, unsigned long p2,
+					 unsigned long p3, unsigned long p4,
+					 unsigned long p5)
 {
 	struct wakeup_source *ws = (struct wakeup_source *)p0;
 
@@ -1597,10 +1561,9 @@ static unsigned long guard_pm_stay_awake(struct kage *kage, unsigned long p0,
 	return 0;
 }
 
-static unsigned long guard_power_supply_get_by_phandle_array(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_power_supply_get_by_phandle_array(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	struct device_node *np = (struct device_node *)p0;
 	const char *property = (const char *)p1;
@@ -1620,13 +1583,13 @@ static unsigned long guard_power_supply_get_by_phandle_array(struct kage *kage, 
 		return -1;
 	}
 
-	return (unsigned long)power_supply_get_by_phandle_array(np, property, psy, size);
+	return (unsigned long)power_supply_get_by_phandle_array(np, property,
+								psy, size);
 }
 
-static unsigned long guard_power_supply_get_drvdata(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_power_supply_get_drvdata(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	struct power_supply *psy = (struct power_supply *)p0;
 
@@ -1638,10 +1601,9 @@ static unsigned long guard_power_supply_get_drvdata(struct kage *kage, unsigned 
 	return (unsigned long)power_supply_get_drvdata(psy);
 }
 
-static unsigned long guard_power_supply_get_property(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_power_supply_get_property(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	struct power_supply *psy = (struct power_supply *)p0;
 	enum power_supply_property psp = (enum power_supply_property)p1;
@@ -1660,9 +1622,9 @@ static unsigned long guard_power_supply_get_property(struct kage *kage, unsigned
 }
 
 static unsigned long guard_power_supply_put(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					    unsigned long p1, unsigned long p2,
+					    unsigned long p3, unsigned long p4,
+					    unsigned long p5)
 {
 	struct power_supply *psy = (struct power_supply *)p0;
 
@@ -1675,14 +1637,14 @@ static unsigned long guard_power_supply_put(struct kage *kage, unsigned long p0,
 	return 0;
 }
 
-static unsigned long guard_power_supply_set_property(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_power_supply_set_property(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	struct power_supply *psy = (struct power_supply *)p0;
 	enum power_supply_property psp = (enum power_supply_property)p1;
-	const union power_supply_propval *val = (const union power_supply_propval *)p2;
+	const union power_supply_propval *val =
+		(const union power_supply_propval *)p2;
 
 	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
@@ -1696,10 +1658,9 @@ static unsigned long guard_power_supply_set_property(struct kage *kage, unsigned
 	return power_supply_set_property(psy, psp, val);
 }
 
-static unsigned long guard_queue_delayed_work_on(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_queue_delayed_work_on(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	int cpu = (int)p0;
 	struct workqueue_struct *wq;
@@ -1712,11 +1673,10 @@ static unsigned long guard_queue_delayed_work_on(struct kage *kage, unsigned lon
 			pr_err("%s: invalid object descriptor\n", __func__);
 			return 0;
 		}
-	}
-	else {
-
+	} else {
 		if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
-			pr_err("%s: guest pointer argument out of bounds\n", __func__);
+			pr_err("%s: guest pointer argument out of bounds\n",
+			       __func__);
 			return 0;
 		}
 		wq = (struct workqueue_struct *)p1;
@@ -1729,10 +1689,9 @@ static unsigned long guard_queue_delayed_work_on(struct kage *kage, unsigned lon
 	return queue_delayed_work_on(cpu, wq, dwork, delay);
 }
 
-static unsigned long guard__raw_spin_lock_irqsave(struct kage *kage, unsigned long p0,
-					      unsigned long p1, unsigned long p2,
-					      unsigned long p3, unsigned long p4,
-					      unsigned long p5)
+static unsigned long guard__raw_spin_lock_irqsave(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	raw_spinlock_t *lock = (raw_spinlock_t *)p0;
 
@@ -1745,10 +1704,9 @@ static unsigned long guard__raw_spin_lock_irqsave(struct kage *kage, unsigned lo
 	return 0;
 }
 
-static unsigned long guard__raw_spin_unlock_irqrestore(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard__raw_spin_unlock_irqrestore(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	raw_spinlock_t *lock = (raw_spinlock_t *)p0;
 	unsigned long flags = (unsigned long)p1;
@@ -1763,9 +1721,9 @@ static unsigned long guard__raw_spin_unlock_irqrestore(struct kage *kage, unsign
 }
 
 static unsigned long guard_regmap_read(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				       unsigned long p1, unsigned long p2,
+				       unsigned long p3, unsigned long p4,
+				       unsigned long p5)
 {
 	struct regmap *map = (struct regmap *)p0;
 	unsigned int reg = (unsigned int)p1;
@@ -1784,9 +1742,9 @@ static unsigned long guard_regmap_read(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_regmap_write(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					unsigned long p1, unsigned long p2,
+					unsigned long p3, unsigned long p4,
+					unsigned long p5)
 {
 	struct regmap *map = (struct regmap *)p0;
 	unsigned int reg = (unsigned int)p1;
@@ -1801,9 +1759,9 @@ static unsigned long guard_regmap_write(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_scnprintf(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				     unsigned long p1, unsigned long p2,
+				     unsigned long p3, unsigned long p4,
+				     unsigned long p5)
 {
 	char *buf = (char *)p0;
 	size_t size = (size_t)p1;
@@ -1827,9 +1785,9 @@ static unsigned long guard_scnprintf(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_seq_lseek(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				     unsigned long p1, unsigned long p2,
+				     unsigned long p3, unsigned long p4,
+				     unsigned long p5)
 {
 	struct file *file = (struct file *)p0;
 	loff_t offset = (loff_t)p1;
@@ -1844,9 +1802,9 @@ static unsigned long guard_seq_lseek(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_seq_open(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				    unsigned long p1, unsigned long p2,
+				    unsigned long p3, unsigned long p4,
+				    unsigned long p5)
 {
 	struct file *file = (struct file *)p0;
 	const struct seq_operations *op = (const struct seq_operations *)p1;
@@ -1864,9 +1822,9 @@ static unsigned long guard_seq_open(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_seq_printf(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				      unsigned long p1, unsigned long p2,
+				      unsigned long p3, unsigned long p4,
+				      unsigned long p5)
 {
 	struct seq_file *m = (struct seq_file *)p0;
 	const char *fmt = (const char *)p1;
@@ -1890,9 +1848,9 @@ static unsigned long guard_seq_printf(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_seq_read(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				    unsigned long p1, unsigned long p2,
+				    unsigned long p3, unsigned long p4,
+				    unsigned long p5)
 {
 	struct file *file = (struct file *)p0;
 	char __user *buf = (char __user *)p1;
@@ -1916,9 +1874,9 @@ static unsigned long guard_seq_read(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_seq_release(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				       unsigned long p1, unsigned long p2,
+				       unsigned long p3, unsigned long p4,
+				       unsigned long p5)
 {
 	struct inode *inode = (struct inode *)p0;
 	struct file *file = (struct file *)p1;
@@ -1932,9 +1890,9 @@ static unsigned long guard_seq_release(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_simple_attr_open(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					    unsigned long p1, unsigned long p2,
+					    unsigned long p3, unsigned long p4,
+					    unsigned long p5)
 {
 	struct inode *inode = (struct inode *)p0;
 	struct file *file = (struct file *)p1;
@@ -1948,9 +1906,9 @@ static unsigned long guard_simple_attr_open(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_simple_attr_read(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					    unsigned long p1, unsigned long p2,
+					    unsigned long p3, unsigned long p4,
+					    unsigned long p5)
 {
 	struct file *file = (struct file *)p0;
 	char __user *buf = (char __user *)p1;
@@ -1973,10 +1931,10 @@ static unsigned long guard_simple_attr_read(struct kage *kage, unsigned long p0,
 	return simple_attr_read(file, buf, size, ppos);
 }
 
-static unsigned long guard_simple_attr_release(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long
+guard_simple_attr_release(struct kage *kage, unsigned long p0, unsigned long p1,
+			  unsigned long p2, unsigned long p3, unsigned long p4,
+			  unsigned long p5)
 {
 	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
@@ -1987,9 +1945,9 @@ static unsigned long guard_simple_attr_release(struct kage *kage, unsigned long 
 }
 
 static unsigned long guard_simple_open(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				       unsigned long p1, unsigned long p2,
+				       unsigned long p3, unsigned long p4,
+				       unsigned long p5)
 {
 	struct inode *inode = (struct inode *)p0;
 	struct file *file = (struct file *)p1;
@@ -2002,10 +1960,9 @@ static unsigned long guard_simple_open(struct kage *kage, unsigned long p0,
 	return simple_open(inode, file);
 }
 
-static unsigned long guard_simple_read_from_buffer(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_simple_read_from_buffer(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	void __user *to = (void __user *)p0;
 	size_t count = (size_t)p1;
@@ -2029,10 +1986,9 @@ static unsigned long guard_simple_read_from_buffer(struct kage *kage, unsigned l
 	return simple_read_from_buffer(to, count, ppos, from, available);
 }
 
-static unsigned long guard_simple_write_to_buffer(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_simple_write_to_buffer(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	void *to = (void *)p0;
 	size_t available = (size_t)p1;
@@ -2057,12 +2013,13 @@ static unsigned long guard_simple_write_to_buffer(struct kage *kage, unsigned lo
 }
 
 static unsigned long guard_single_open(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				       unsigned long p1, unsigned long p2,
+				       unsigned long p3, unsigned long p4,
+				       unsigned long p5)
 {
 	struct file *file = (struct file *)p0;
-	int (*show)(struct seq_file *, void *) = (int (*)(struct seq_file *, void *))p1;
+	int (*show)(struct seq_file *, void *) =
+		(int (*)(struct seq_file *, void *))p1;
 	void *data = (void *)p2;
 
 	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
@@ -2078,9 +2035,9 @@ static unsigned long guard_single_open(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_single_release(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					  unsigned long p1, unsigned long p2,
+					  unsigned long p3, unsigned long p4,
+					  unsigned long p5)
 {
 	struct inode *inode = (struct inode *)p0;
 	struct file *file = (struct file *)p1;
@@ -2094,9 +2051,9 @@ static unsigned long guard_single_release(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_sscanf(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				  unsigned long p1, unsigned long p2,
+				  unsigned long p3, unsigned long p4,
+				  unsigned long p5)
 {
 	const char *buf = (const char *)p0;
 	const char *fmt = (const char *)p1;
@@ -2119,18 +2076,18 @@ static unsigned long guard_sscanf(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_stack_chk_fail(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					  unsigned long p1, unsigned long p2,
+					  unsigned long p3, unsigned long p4,
+					  unsigned long p5)
 {
 	__stack_chk_fail();
 	return 0;
 }
 
 static unsigned long guard_strlen(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				  unsigned long p1, unsigned long p2,
+				  unsigned long p3, unsigned long p4,
+				  unsigned long p5)
 {
 	const char *s = (const char *)p0;
 
@@ -2143,9 +2100,9 @@ static unsigned long guard_strlen(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_strncmp(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				   unsigned long p1, unsigned long p2,
+				   unsigned long p3, unsigned long p4,
+				   unsigned long p5)
 {
 	const char *cs = (const char *)p0;
 	const char *ct = (const char *)p1;
@@ -2164,9 +2121,9 @@ static unsigned long guard_strncmp(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_strnlen(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				   unsigned long p1, unsigned long p2,
+				   unsigned long p3, unsigned long p4,
+				   unsigned long p5)
 {
 	const char *s = (const char *)p0;
 	size_t count = (size_t)p1;
@@ -2180,9 +2137,9 @@ static unsigned long guard_strnlen(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_strscpy(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				   unsigned long p1, unsigned long p2,
+				   unsigned long p3, unsigned long p4,
+				   unsigned long p5)
 {
 	char *dest = (char *)p0;
 	const char *src = (const char *)p1;
@@ -2201,9 +2158,9 @@ static unsigned long guard_strscpy(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_strsep(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				  unsigned long p1, unsigned long p2,
+				  unsigned long p3, unsigned long p4,
+				  unsigned long p5)
 {
 	char **s = (char **)p0;
 	const char *ct = (const char *)p1;
@@ -2221,9 +2178,9 @@ static unsigned long guard_strsep(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_sysfs_emit_at(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					 unsigned long p1, unsigned long p2,
+					 unsigned long p3, unsigned long p4,
+					 unsigned long p5)
 {
 	char *buf = (char *)p0;
 	int at = (int)p1;
@@ -2248,18 +2205,17 @@ static unsigned long guard_sysfs_emit_at(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_system_wq(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				     unsigned long p1, unsigned long p2,
+				     unsigned long p3, unsigned long p4,
+				     unsigned long p5)
 {
 	return (unsigned long)system_wq;
 }
 
 #ifdef CONFIG_CHARGER_MAX77759
-static unsigned long guard_tcpm_get_partner_src_caps(struct kage *kage, unsigned long p0,
-						     unsigned long p1, unsigned long p2,
-						     unsigned long p3, unsigned long p4,
-						     unsigned long p5)
+static unsigned long guard_tcpm_get_partner_src_caps(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	struct tcpm_port *port = (struct tcpm_port *)p0;
 	u32 *src_caps = (u32 *)p1;
@@ -2281,10 +2237,9 @@ static unsigned long guard_tcpm_get_partner_src_caps(struct kage *kage, unsigned
 	return tcpm_get_partner_src_caps(port, src_caps, cnt);
 }
 
-static unsigned long guard_tcpm_put_partner_src_caps(struct kage *kage, unsigned long p0,
-						     unsigned long p1, unsigned long p2,
-						     unsigned long p3, unsigned long p4,
-						     unsigned long p5)
+static unsigned long guard_tcpm_put_partner_src_caps(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	struct tcpm_port *port = (struct tcpm_port *)p0;
 
@@ -2298,10 +2253,9 @@ static unsigned long guard_tcpm_put_partner_src_caps(struct kage *kage, unsigned
 }
 #endif
 
-static unsigned long guard_unregister_chrdev_region(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_unregister_chrdev_region(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	dev_t from = (dev_t)p0;
 	unsigned count = (unsigned)p1;
@@ -2311,9 +2265,9 @@ static unsigned long guard_unregister_chrdev_region(struct kage *kage, unsigned 
 }
 
 static unsigned long guard_up(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+			      unsigned long p1, unsigned long p2,
+			      unsigned long p3, unsigned long p4,
+			      unsigned long p5)
 {
 	struct semaphore *sem = (struct semaphore *)p0;
 
@@ -2327,9 +2281,9 @@ static unsigned long guard_up(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_vprintk(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+				   unsigned long p1, unsigned long p2,
+				   unsigned long p3, unsigned long p4,
+				   unsigned long p5)
 {
 	const char *fmt = (const char *)p0;
 	va_list *args = (va_list *)p1;
@@ -2346,30 +2300,36 @@ static unsigned long guard_vprintk(struct kage *kage, unsigned long p0,
 	return vprintk(fmt, *args);
 }
 
-static unsigned long guard_wakeup_source_register(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_wakeup_source_register(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
-	struct device *dev = (struct device *)p0;
+	u64 devdesc = p0;
 	const char *name = (const char *)p1;
+	struct device *dev = NULL;
+	struct wakeup_source *ws;
 
-	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		return -1;
+	if (devdesc) {
+		dev = kage_obj_get(kage, devdesc, KAGE_ODTYPE_DEVICE);
+		if (IS_ERR_OR_NULL(dev))
+			return dev ? (unsigned long)dev : -EINVAL;
 	}
+
 	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
 
-	return (unsigned long)wakeup_source_register(dev, name);
+	ws = wakeup_source_register(dev, name);
+	if (IS_ERR_OR_NULL(ws))
+		return (unsigned long)ws;
+
+	return kage_objstorage_alloc(kage, true, KAGE_ODTYPE_WAKEUPSOURCE, ws);
 }
 
-static unsigned long guard_wakeup_source_unregister(struct kage *kage, unsigned long p0,
-						  unsigned long p1, unsigned long p2,
-						  unsigned long p3, unsigned long p4,
-						  unsigned long p5)
+static unsigned long guard_wakeup_source_unregister(
+	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
+	unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	struct wakeup_source *ws = (struct wakeup_source *)p0;
 
@@ -2404,9 +2364,9 @@ static unsigned long guard___warn_printk(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard___dynamic_pr_dbg(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+					    unsigned long p1, unsigned long p2,
+					    unsigned long p3, unsigned long p4,
+					    unsigned long p5)
 {
 #if defined(CONFIG_DYNAMIC_DEBUG) || \
 	(defined(CONFIG_DYNAMIC_DEBUG_CORE) && defined(DYNAMIC_DEBUG_MODULE))
@@ -2422,7 +2382,7 @@ static unsigned long guard___dynamic_pr_dbg(struct kage *kage, unsigned long p0,
 		pr_err("%s: guest pointer argument out of bounds\n", __func__);
 		return -1;
 	}
-	struct va_format vaf = {fmt, va_args};
+	struct va_format vaf = { fmt, va_args };
 
 	__dynamic_pr_debug(descriptor, "%pV", &vaf);
 	return 0;
@@ -2431,90 +2391,89 @@ static unsigned long guard___dynamic_pr_dbg(struct kage *kage, unsigned long p0,
 #endif
 }
 
-static unsigned long guard_simple_attr_write(struct kage *kage, unsigned long p0,
-                                      unsigned long p1, unsigned long p2,
-                                      unsigned long p3, unsigned long p4,
-                                      unsigned long p5)
+static unsigned long guard_simple_attr_write(struct kage *kage,
+					     unsigned long p0, unsigned long p1,
+					     unsigned long p2, unsigned long p3,
+					     unsigned long p4, unsigned long p5)
 {
-	 struct file *file = (struct file *)p0;
-	 const char __user *buf = (const char __user *)p1;
-	 size_t size = (size_t)p2;
-	 loff_t *ppos = (loff_t *)p3;
+	struct file *file = (struct file *)p0;
+	const char __user *buf = (const char __user *)p1;
+	size_t size = (size_t)p2;
+	loff_t *ppos = (loff_t *)p3;
 
-	 if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
-		 pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		 return -1;
-	 }
-	 if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
-		 pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		 return -1;
-	 }
-	 if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
-		 pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		 return -1;
-	 }
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
+		return -1;
+	}
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
+		return -1;
+	}
+	if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
+		return -1;
+	}
 
-	 return simple_attr_write(file, buf, size, ppos);
+	return simple_attr_write(file, buf, size, ppos);
 }
 
 static unsigned long guard_sysfs_emit(struct kage *kage, unsigned long p0,
-                               unsigned long p1, unsigned long p2,
-                               unsigned long p3, unsigned long p4,
-                               unsigned long p5)
+				      unsigned long p1, unsigned long p2,
+				      unsigned long p3, unsigned long p4,
+				      unsigned long p5)
 {
- char *buf = (char *)p0;
- const char *fmt = (const char *)p1;
- va_list *args = (va_list *)p2;
+	char *buf = (char *)p0;
+	const char *fmt = (const char *)p1;
+	va_list *args = (va_list *)p2;
 
- if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
-         pr_err("%s: guest pointer argument out of bounds\n", __func__);
-         return -1;
- }
- if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
-         pr_err("%s: guest pointer argument out of bounds\n", __func__);
-         return -1;
- }
- if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
-         pr_err("%s: guest pointer argument out of bounds\n", __func__);
-         return -1;
- }
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
+		return -1;
+	}
+	if (p1 < kage->base || p1 >= kage->base + KAGE_GUEST_SIZE) {
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
+		return -1;
+	}
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
+		return -1;
+	}
 
- return sysfs_emit(buf, fmt, *args);
+	return sysfs_emit(buf, fmt, *args);
 }
 
 static unsigned long guard_vsnprintf(struct kage *kage, unsigned long p0,
-                              unsigned long p1, unsigned long p2,
-                              unsigned long p3, unsigned long p4,
-                              unsigned long p5)
+				     unsigned long p1, unsigned long p2,
+				     unsigned long p3, unsigned long p4,
+				     unsigned long p5)
 {
- char *buf = (char *)p0;
- size_t size = (size_t)p1;
- const char *fmt = (const char *)p2;
- va_list *args = (va_list *)p3;
+	char *buf = (char *)p0;
+	size_t size = (size_t)p1;
+	const char *fmt = (const char *)p2;
+	va_list *args = (va_list *)p3;
 
- if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
-         pr_err("%s: guest pointer argument out of bounds\n", __func__);
-         return -1;
- }
- if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
-         pr_err("%s: guest pointer argument out of bounds\n", __func__);
-         return -1;
- }
- if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
-         pr_err("%s: guest pointer argument out of bounds\n", __func__);
-         return -1;
- }
+	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
+		return -1;
+	}
+	if (p2 < kage->base || p2 >= kage->base + KAGE_GUEST_SIZE) {
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
+		return -1;
+	}
+	if (p3 < kage->base || p3 >= kage->base + KAGE_GUEST_SIZE) {
+		pr_err("%s: guest pointer argument out of bounds\n", __func__);
+		return -1;
+	}
 
- return vsnprintf(buf, size, fmt, *args);
+	return vsnprintf(buf, size, fmt, *args);
 }
-
 
 guard_t *syscall_to_guard[KAGE_SYSCALL_COUNT] = {
 	[KAGE_TASKLET_INIT] = guard_tasklet_init,
-        [KAGE___TASKLET_SCHEDULE] = guard___tasklet_schedule,
+	[KAGE___TASKLET_SCHEDULE] = guard___tasklet_schedule,
 	[KAGE_PRINTK] = guard__printk,
 	[KAGE_KMALLOC_GENERIC] = guard_kmalloc_generic,
-        [KAGE_KMALLOC_TRACE] = guard_kmalloc_trace,
+	[KAGE_KMALLOC_TRACE] = guard_kmalloc_trace,
 	[KAGE_ALLOC_CHRDEV_REGION] = guard_alloc_chrdev_region,
 	[KAGE_ALT_CB_PATCH_NOPS] = guard_alt_cb_patch_nops,
 	[KAGE_CDEV_ADD] = guard_cdev_add,
@@ -2531,11 +2490,15 @@ guard_t *syscall_to_guard[KAGE_SYSCALL_COUNT] = {
 	[KAGE_DEBUGFS_REMOVE] = guard_debugfs_remove,
 	[KAGE_DELAYED_WORK_TIMER_FN] = guard_delayed_work_timer_fn,
 	[KAGE_DEV_DRIVER_STRING] = guard_dev_driver_string,
+	[KAGE__DEV_EMERG] = guard__dev_emerg,
+	[KAGE__DEV_ALERT] = guard__dev_alert,
+	[KAGE__DEV_CRIT] = guard__dev_crit,
 	[KAGE__DEV_ERR] = guard__dev_err,
+	[KAGE__DEV_WARN] = guard__dev_warn,
+	[KAGE__DEV_NOTICE] = guard__dev_notice,
 	[KAGE__DEV_INFO] = guard__dev_info,
 	[KAGE_DEVM_KMALLOC] = guard_devm_kmalloc,
 	[KAGE_DEV_PRINTK_EMIT] = guard_dev_printk_emit,
-	[KAGE__DEV_WARN] = guard__dev_warn,
 	[KAGE_DOWN_INTERRUPTIBLE] = guard_down_interruptible,
 	[KAGE___DYNAMIC_DEV_DBG] = guard___dynamic_dev_dbg,
 	[KAGE_FORTIFY_PANIC] = guard_fortify_panic,
@@ -2558,7 +2521,8 @@ guard_t *syscall_to_guard[KAGE_SYSCALL_COUNT] = {
 	[KAGE_KTIME_GET_REAL_SECONDS] = guard_ktime_get_real_seconds,
 	[KAGE_KTIME_GET_WITH_OFFSET] = guard_ktime_get_with_offset,
 	[KAGE_LIST_ADD_VALID_OR_REPORT] = guard_list_add_valid_or_report,
-	[KAGE_LIST_DEL_ENTRY_VALID_OR_REPORT] = guard_list_del_entry_valid_or_report,
+	[KAGE_LIST_DEL_ENTRY_VALID_OR_REPORT] =
+		guard_list_del_entry_valid_or_report,
 #ifdef CONFIG_GOOGLE_LOGBUFFER
 	[KAGE_LOGBUFFER_LOG] = guard_logbuffer_log,
 	[KAGE_LOGBUFFER_VLOG] = guard_logbuffer_vlog,
@@ -2579,14 +2543,19 @@ guard_t *syscall_to_guard[KAGE_SYSCALL_COUNT] = {
 	[KAGE_OF_GET_NEXT_CHILD] = guard_of_get_next_child,
 	[KAGE_OF_GET_PROPERTY] = guard_of_get_property,
 	[KAGE_OF_NVMEM_DEVICE_GET] = guard_of_nvmem_device_get,
-	[KAGE_OF_PROPERTY_COUNT_ELEMS_OF_SIZE] = guard_of_property_count_elems_of_size,
+	[KAGE_OF_PROPERTY_COUNT_ELEMS_OF_SIZE] =
+		guard_of_property_count_elems_of_size,
 	[KAGE_OF_PROPERTY_READ_STRING] = guard_of_property_read_string,
-	[KAGE_OF_PROPERTY_READ_STRING_HELPER] = guard_of_property_read_string_helper,
-	[KAGE_OF_PROPERTY_READ_VARIABLE_U16_ARRAY] = guard_of_property_read_variable_u16_array,
-	[KAGE_OF_PROPERTY_READ_VARIABLE_U32_ARRAY] = guard_of_property_read_variable_u32_array,
+	[KAGE_OF_PROPERTY_READ_STRING_HELPER] =
+		guard_of_property_read_string_helper,
+	[KAGE_OF_PROPERTY_READ_VARIABLE_U16_ARRAY] =
+		guard_of_property_read_variable_u16_array,
+	[KAGE_OF_PROPERTY_READ_VARIABLE_U32_ARRAY] =
+		guard_of_property_read_variable_u32_array,
 	[KAGE_PM_RELAX] = guard_pm_relax,
 	[KAGE_PM_STAY_AWAKE] = guard_pm_stay_awake,
-	[KAGE_POWER_SUPPLY_GET_BY_PHANDLE_ARRAY] = guard_power_supply_get_by_phandle_array,
+	[KAGE_POWER_SUPPLY_GET_BY_PHANDLE_ARRAY] =
+		guard_power_supply_get_by_phandle_array,
 	[KAGE_POWER_SUPPLY_GET_DRVDATA] = guard_power_supply_get_drvdata,
 	[KAGE_POWER_SUPPLY_GET_PROPERTY] = guard_power_supply_get_property,
 	[KAGE_POWER_SUPPLY_PUT] = guard_power_supply_put,
@@ -2634,3 +2603,4 @@ guard_t *syscall_to_guard[KAGE_SYSCALL_COUNT] = {
 #endif
 	[KAGE___WARN_PRINTK] = guard___warn_printk,
 };
+

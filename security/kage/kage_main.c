@@ -310,6 +310,10 @@ void *kage_obj_get(struct kage *kage, u64 descriptor,
 	u8 obj_type = kage_unpack_objdescriptor_type(descriptor);
 	struct kage_objstorage *storage;
 
+	// Pass-through NULLs; sometimes that's OK
+        if (!descriptor)
+		return 0;
+
 	if (objindex > KAGE_MAX_OBJ_INDEX)
 		return ERR_PTR(-EINVAL);
 
@@ -321,31 +325,23 @@ void *kage_obj_get(struct kage *kage, u64 descriptor,
 	else
 		storage = kage->objstorage;
 
-	if (!storage)
-		return ERR_PTR(-EINVAL);
-
 	return rcu_dereference(storage->objs[objindex]);
 }
 
-int kage_obj_set(struct kage *kage, u64 descriptor, void *obj)
+void kage_obj_set(struct kage *kage, u64 descriptor, void *obj)
 {
 	u8 owner = kage_unpack_objdescriptor_owner(descriptor);
 	u16 objindex = kage_unpack_objdescriptor_objindex(descriptor);
 	struct kage_objstorage *storage;
 
-	if (objindex > KAGE_MAX_OBJ_INDEX)
-		return -EINVAL;
+	BUG_ON(objindex > KAGE_MAX_OBJ_INDEX);
 
 	if (owner == KAGE_OWNER_GLOBAL)
 		storage = kage_global_objstorage;
 	else
 		storage = kage->objstorage;
 
-	if (!storage)
-		return -EINVAL;
-
 	rcu_assign_pointer(storage->objs[objindex], obj);
-	return 0;
 }
 
 void kage_obj_delete(struct kage *kage, u64 descriptor)
@@ -354,7 +350,8 @@ void kage_obj_delete(struct kage *kage, u64 descriptor)
 }
 
 u64 kage_objstorage_alloc(struct kage *kage, bool is_global,
-			      enum kage_objdescriptor_type type)
+			  enum kage_objdescriptor_type type,
+			  void * obj)
 {
 	struct kage_objstorage *storage;
 	unsigned long flags;
@@ -369,9 +366,6 @@ u64 kage_objstorage_alloc(struct kage *kage, bool is_global,
 		owner = kage->owner_id;
 	}
 
-	if (!storage)
-		return 0;
-
 	spin_lock_irqsave(&storage->lock, flags);
 
 	for (i = 0; i <= KAGE_MAX_OBJ_INDEX; i++) {
@@ -381,7 +375,9 @@ u64 kage_objstorage_alloc(struct kage *kage, bool is_global,
 					       lockdep_is_held(&storage->lock))) {
 			storage->next_slot = slot + 1;
 			spin_unlock_irqrestore(&storage->lock, flags);
-			return kage_pack_objdescriptor(type, owner, slot);
+			u64 desc = kage_pack_objdescriptor(type, owner, slot);
+			kage_obj_set(kage, desc, obj);
+			return desc;
 		}
 	}
 
@@ -448,7 +444,7 @@ static uint64_t kage_syshandler(struct kage *kage, uint64_t sysno, uint64_t p0,
 {
 	guard_t *f;
 
-	pr_info("%s syshandler %llx %llx %llx %llx %llx %llx %llx\n",
+	pr_info("%s syshandler %llu %llx %llx %llx %llx %llx %llx\n",
 		MODULE_NAME, sysno, p0, p1, p2, p3, p4, p5);
 	if (sysno >= KAGE_SYSCALL_COUNT) {
 		pr_warn("%s invalid system call number %lld\n", MODULE_NAME,
