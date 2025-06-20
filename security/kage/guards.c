@@ -24,6 +24,7 @@
 #include <linux/klist.h>
 #include <linux/ktime.h>
 #include <linux/list.h>
+#include <linux/fortify-string.h>
 #ifdef CONFIG_GOOGLE_LOGBUFFER
 #include <linux/logbuffer.h>
 #endif
@@ -438,11 +439,27 @@ static unsigned long guard_device_destroy(struct kage *kage, unsigned long p0,
 					  unsigned long p3, unsigned long p4,
 					  unsigned long p5)
 {
-	struct class *class = (struct class *)p0;
-	dev_t devt = (dev_t)p1;
+	u64 class_desc = p0;
+	u64 dev_desc = p1;
+	struct class *class;
+	struct device *dev;
 
-	device_destroy(class, devt);
+	class = kage_obj_get(kage, class_desc, KAGE_ODTYPE_CLASS);
+	if (IS_ERR_OR_NULL(class)) {
+		pr_err("%s: invalid class parameter\n", __func__);
+		return 0;
+	}
+
+	dev = kage_obj_get(kage, dev_desc, KAGE_ODTYPE_DEVICE);
+	if (IS_ERR_OR_NULL(dev)) {
+		pr_err("%s: invalid device parameter\n", __func__);
+		return 0;
+	}
+
+	device_destroy(class, dev->devt);
+	kage_obj_delete(kage, dev_desc);
 	return 0;
+
 }
 
 static unsigned long guard_class_create(struct kage *kage, unsigned long p0,
@@ -464,17 +481,21 @@ static unsigned long guard_class_create(struct kage *kage, unsigned long p0,
 }
 
 static unsigned long guard_class_destroy(struct kage *kage, unsigned long p0,
-					 unsigned long p1, unsigned long p2,
-					 unsigned long p3, unsigned long p4,
-					 unsigned long p5)
+                                    unsigned long p1, unsigned long p2,
+                                    unsigned long p3, unsigned long p4,
+                                    unsigned long p5)
 {
-	u64 clsdesc = p0;
-	struct class *cls = kage_obj_get(kage, clsdesc, KAGE_ODTYPE_CLASS);
-	if (IS_ERR_OR_NULL(cls))
-		pr_err("%s: invalid class parameter\n", __func__);
-	return 0;
+	u64 class_desc = p0;
+	struct class *class;
 
-	class_destroy(cls);
+	class = kage_obj_get(kage, class_desc, KAGE_ODTYPE_CLASS);
+	if (IS_ERR_OR_NULL(class)) {
+		pr_err("%s: invalid class parameter\n", __func__);
+		return 0;
+	}
+
+	class_destroy(class);
+	kage_obj_delete(kage, class_desc);
 	return 0;
 }
 
@@ -2327,19 +2348,23 @@ static unsigned long guard_wakeup_source_register(
 	return kage_objstorage_alloc(kage, true, KAGE_ODTYPE_WAKEUPSOURCE, ws);
 }
 
-static unsigned long guard_wakeup_source_unregister(
-	struct kage *kage, unsigned long p0, unsigned long p1, unsigned long p2,
-	unsigned long p3, unsigned long p4, unsigned long p5)
+static unsigned long guard_wakeup_source_unregister(struct kage *kage, unsigned long p0,
+                                            unsigned long p1, unsigned long p2,
+                                            unsigned long p3, unsigned long p4,
+                                            unsigned long p5)
 {
-	struct wakeup_source *ws = (struct wakeup_source *)p0;
+  u64 ws_desc = p0;
+  struct wakeup_source *ws;
 
-	if (p0 < kage->base || p0 >= kage->base + KAGE_GUEST_SIZE) {
-		pr_err("%s: guest pointer argument out of bounds\n", __func__);
-		return -1;
-	}
+  ws = kage_obj_get(kage, ws_desc, KAGE_ODTYPE_WAKEUPSOURCE);
+  if (IS_ERR_OR_NULL(ws)) {
+          pr_err("%s: invalid wakeup source parameter\n", __func__);
+          return 0;
+  }
 
-	wakeup_source_unregister(ws);
-	return 0;
+  wakeup_source_unregister(ws);
+  kage_obj_delete(kage, ws_desc);
+  return 0;
 }
 
 static unsigned long guard___warn_printk(struct kage *kage, unsigned long p0,
@@ -2359,7 +2384,8 @@ static unsigned long guard___warn_printk(struct kage *kage, unsigned long p0,
 		return -1;
 	}
 
-	__warn_printk(fmt, *pargs);
+	struct va_format vaf = { fmt, pargs };
+	__warn_printk(fmt, "%pV", &vaf);
 	return 0;
 }
 

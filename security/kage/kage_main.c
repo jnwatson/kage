@@ -24,11 +24,10 @@
 
 #define MODULE_NAME "kage"
 #define VM_AREA_SIZE (64UL * 1024 * 1024 * 1024)
-#define MAX_DOMAINS (VM_AREA_SIZE / KAGE_GUEST_SIZE - 1)
+#define MAX_GUESTS (VM_AREA_SIZE / KAGE_GUEST_SIZE - 1)
 
 // To reduce PTE fragmentation, prefer PMD-sized allocations.
 // FIXME: This won't be appropriate for PAGE_SIZE > 4KiB, nor call stacks
-#define DOMAIN_PAGE_SHIFT PMD_SHIFT // 2MB pages
 int vmap_pages_range_noflush(unsigned long addr, unsigned long end,
 			     pgprot_t prot, struct page **pages,
 			     unsigned int page_shift);
@@ -36,7 +35,7 @@ int vmap_pages_range_noflush(unsigned long addr, unsigned long end,
 struct vm_struct *vm_area;
 spinlock_t lock;
 
-static struct kage kages[MAX_DOMAINS];
+static struct kage kages[MAX_GUESTS];
 
 // Returns true if compatible with LFI Spec 2.5 dense mode.
 bool is_valid_vaddr(struct kage const *kage, unsigned long addr,
@@ -59,12 +58,16 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 					enum mod_mem_type type, bool do_lock, gfp_t flags)
 {
 	unsigned long size = end - start;
-	unsigned int nr_pages = size >> DOMAIN_PAGE_SHIFT;
+	if (size > KAGE_GUEST_SIZE)
+		return ERR_PTR(-ENOMEM);
+
+	unsigned int nr_pages = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
 	unsigned long start_offset = start - kage->base;
 	unsigned long irq_flags;
 	int i, err;
 	void *ret = NULL;
 	struct page **tmp_pages;
+
 
 	/* Track pages allocated to undo the allocation on failure */
 	tmp_pages = kmalloc_array(nr_pages, sizeof(*tmp_pages), GFP_KERNEL);
@@ -76,15 +79,14 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 		spin_lock_irqsave(&lock, irq_flags);
 
 	for (i = 0; i < nr_pages; i++) {
-		tmp_pages[i] = alloc_pages(flags,
-					   DOMAIN_PAGE_SHIFT - PAGE_SHIFT);
+		tmp_pages[i] = alloc_page(flags);
 		if (!tmp_pages[i]) {
 			ret = ERR_PTR(-ENOMEM);
 			goto free_pages;
 		}
-		kage->pages[(start_offset >> DOMAIN_PAGE_SHIFT) + i] =
+		kage->pages[(start_offset >> PAGE_SHIFT) + i] =
 			tmp_pages[i];
-		set_bit((start_offset >> DOMAIN_PAGE_SHIFT) + i,
+		set_bit((start_offset >> PAGE_SHIFT) + i,
 			kage->alloc_bitmap);
 	}
 
@@ -96,7 +98,7 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 
 	/* Map pages into VM area */
 	err = vmap_pages_range_noflush(start, end, prot, tmp_pages,
-				       DOMAIN_PAGE_SHIFT);
+				       PAGE_SHIFT);
 	flush_cache_vmap(start, end);
 	if (err)
 		goto free_pages;
@@ -106,9 +108,9 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 
 free_pages:
 	for (i--; i >= 0; i--) {
-		clear_bit((start_offset >> DOMAIN_PAGE_SHIFT) + i,
+		clear_bit((start_offset >> PAGE_SHIFT) + i,
 			  kage->alloc_bitmap);
-		__free_pages(tmp_pages[i], DOMAIN_PAGE_SHIFT - PAGE_SHIFT);
+		__free_page(tmp_pages[i]);
 	}
 cleanup:
 	if (do_lock)
@@ -124,8 +126,8 @@ void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type, 
 {
 	pr_info("kage_memory_alloc: type=%d\n", type);
 	unsigned long start = ALIGN(kage->base + kage->next_open_offs,
-				    1 << DOMAIN_PAGE_SHIFT);
-	unsigned long end = ALIGN(start + size, 1 << DOMAIN_PAGE_SHIFT);
+				    1 << PAGE_SHIFT);
+	unsigned long end = ALIGN(start + size, 1 << PAGE_SHIFT);
 	void *ret = NULL;
 	unsigned long irq_flags;
 
@@ -155,7 +157,7 @@ static void kage_free_closures(struct kage *kage)
 
 static int kage_init(struct kage *kage)
 {
-	unsigned long nr_pages = VM_AREA_SIZE >> DOMAIN_PAGE_SHIFT;
+	unsigned long nr_pages = VM_AREA_SIZE >> PAGE_SHIFT;
 	int i, err;
 	static u8 next_owner_id = 0;
 
@@ -227,13 +229,13 @@ EXPORT_SYMBOL(kage_memory_free);
 void kage_memory_free_all(struct kage *kage)
 {
 	unsigned long flags;
-	unsigned int nr_pages = KAGE_GUEST_SIZE >> DOMAIN_PAGE_SHIFT;
+	unsigned int nr_pages = KAGE_GUEST_SIZE >> PAGE_SHIFT;
 	int i;
 
 	vunmap_range(kage->base, kage->base + KAGE_GUEST_SIZE);
 	spin_lock_irqsave(&lock, flags);
 	for_each_set_bit(i, kage->alloc_bitmap, nr_pages)
-		__free_pages(kage->pages[i], DOMAIN_PAGE_SHIFT - PAGE_SHIFT);
+		__free_page(kage->pages[i]);
 
 	bitmap_zero(kage->alloc_bitmap, nr_pages);
 	spin_unlock_irqrestore(&lock, flags);
@@ -277,7 +279,7 @@ static void init_kages(void)
 	unsigned long addr = ALIGN((unsigned long)vm_area->addr, KAGE_GUEST_SIZE);
 	int i;
 
-	for (i = 0; i < MAX_DOMAINS; i++)
+	for (i = 0; i < MAX_GUESTS; i++)
 		kages[i].base = addr;
 
 	addr += KAGE_GUEST_SIZE;
@@ -423,17 +425,17 @@ static struct kage *alloc_kage(void)
 	struct kage *kage = NULL;
 	static int nextidx;
 	int i = nextidx;
-	int last = i ? i - 1 : MAX_DOMAINS - 1;
+	int last = i ? i - 1 : MAX_GUESTS - 1;
 
 	do {
 		if (!kages[i].pages) {
 			kage = &kages[i];
 			break;
 		}
-		i = (i + 1) % MAX_DOMAINS;
+		i = (i + 1) % MAX_GUESTS;
 	} while (i != last);
 
-	nextidx = i++ % MAX_DOMAINS;
+	nextidx = i++ % MAX_GUESTS;
 
 	return kage;
 }
@@ -465,7 +467,7 @@ static uint64_t kage_syshandler(struct kage *kage, uint64_t sysno, uint64_t p0,
 static int setup_lfisys(struct kage *kage)
 {
 	unsigned long lfisys_end = ALIGN((kage->base + sizeof(struct LFISys)),
-					 1 << DOMAIN_PAGE_SHIFT);
+					 PAGE_SIZE);
 	void *sysmem = kage_memory_alloc_explicit(kage, kage->base, lfisys_end,
 						  MOD_DATA, true, GFP_KERNEL);
 
@@ -705,8 +707,8 @@ static void __exit kagemodule_exit(void)
 {
 	int i;
 
-	pr_info("%s: Exiting\n", MODULE_NAME);
-	for (i = 0; i < MAX_DOMAINS; i++) {
+	pr_info(MODULE_NAME ": Exiting\n");
+	for (i = 0; i < MAX_GUESTS; i++) {
 		struct kage *kage = &kages[i];
 
 		if (kage->pages)
@@ -721,4 +723,4 @@ module_exit(kagemodule_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Nic Watson");
-MODULE_DESCRIPTION("Kage Kernel Module Sandbox");
+MODULE_DESCRIPTION("Kage: A Kernel Module Sandbox");
