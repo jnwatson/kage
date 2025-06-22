@@ -45,7 +45,7 @@ struct LFIProc;
 // Warning: update GET_PROC in runtime.S if you change this.
 typedef struct LFISys {
 	uintptr_t rtcalls[256];
-	struct LFIProc *(*procs)[]; /* &kage->procs */
+	struct LFIProc *(*procs)[]; /* == &kage->procs */
 } LFISys;
 
 struct kage;

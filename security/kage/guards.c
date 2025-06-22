@@ -244,6 +244,8 @@ static unsigned long guard_kmalloc_trace(struct kage *kage, unsigned long p0,
 {
 	gfp_t flags = (gfp_t)p1;
 	size_t size = (size_t)p2;
+	pr_info("*** %s kage=%px, kmem_cache=%lx, flags=%x size=%lu \n", 
+		__func__, kage, p0, flags, size);
 
 	// We ignore p0 (cache) parameter since we want to use the host's
 
@@ -2492,6 +2494,28 @@ static unsigned long guard_vsnprintf(struct kage *kage, unsigned long p0,
 	}
 
 	return vsnprintf(buf, size, fmt, *args);
+}
+
+extern void lfi_syscall_entry_new(void);
+
+#define NAME_TO_GUARD_ENTRY(s) {#s, (unsigned long) guard_ ## s, \
+			       (unsigned long)lfi_syscall_entry_new}
+
+/* NOTE: this array must be sorted by name (so bsearch works) */
+struct kage_host_call name_to_guard[] = {
+	NAME_TO_GUARD_ENTRY(kmalloc_trace),
+};
+
+struct kage_host_call *find_host_call(const char *name)
+{
+	// FIXME: use bsearch
+	unsigned int i;
+	for (i=0; i<ARRAY_SIZE(name_to_guard); i++) {
+		if (0 == strcmp(name, name_to_guard[i].name)) {
+			return &name_to_guard[i];
+		}
+	}
+	return NULL;
 }
 
 guard_t *syscall_to_guard[KAGE_SYSCALL_COUNT] = {

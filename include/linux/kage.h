@@ -6,11 +6,10 @@
 #include <linux/module.h>
 #include <linux/assoc_array.h>
 #include <linux/kage_syscall.h>
+#include <linux/kage_asm.h>
 
 
 // Assume 8k stack
-#define KAGE_SANDBOX_STACK_ORDER 13
-#define KAGE_SANDBOX_STACK_SIZE (1 << KAGE_SANDBOX_STACK_ORDER)
 #define KAGE_GUEST_SIZE (4UL * 1024 * 1024 * 1024)
 
 #define KAGE_MAX_PROCS 8
@@ -42,7 +41,7 @@ struct kage {
         const char *modname;
 	unsigned long base;
 	unsigned long *alloc_bitmap;
-	unsigned long next_open_offs;
+	unsigned long next_open_memory_offs;
 	struct LFIProc *procs[KAGE_MAX_PROCS];
 	int open_proc_idx;
 	// User-provided runtime call handler.
@@ -54,10 +53,14 @@ struct kage {
 	// Where the instruction sequence to exit from sandbox lives (inside the
 	// sandbox)
 	unsigned long exit_addr;
+	void * tramp_text;
+	void * tramp_data;
 
 	struct assoc_array closures;
 	struct kage_objstorage *objstorage;
 	u8 owner_id;
+	unsigned int num_host_calls;
+	struct kage_host_call *host_calls[MAX_HOST_CALLS];
 };
 
 void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type, gfp_t flags);
@@ -65,7 +68,7 @@ void kage_memory_free_all(struct kage *kage);
 void kage_memory_free(struct kage *kage, void *vaddr);
 struct kage *kage_create(const char *modname);
 void kage_free(struct kage *kage);
-void kage_post_move(struct kage *kage, 
+void kage_post_relocation(struct kage *kage, 
 			   const Elf_Shdr *sechdrs,
                            unsigned int shnum,
                            const Elf_Sym *symtab,
@@ -80,5 +83,7 @@ int kage_call_init(struct kage *kage, initcall_t fn);
 uint64_t kage_call(struct kage *kage, void * fn,
               uint64_t p0, uint64_t p1, uint64_t p2,
               uint64_t p3, uint64_t p4, uint64_t p5);
+
+unsigned long kage_symbol_value(struct kage *, const char *name);
 
 #endif /* _LINUX_KAGE_H */

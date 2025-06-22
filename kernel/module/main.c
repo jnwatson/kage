@@ -1461,7 +1461,19 @@ static int simplify_symbols(struct module *mod, const struct load_info *info)
 			ksym = resolve_symbol_wait(mod, info, name);
 			/* Ok if resolved.  */
 			if (ksym && !IS_ERR(ksym)) {
-				sym[i].st_value = kernel_symbol_value(ksym);
+
+#ifdef CONFIG_SECURITY_KAGE
+				if (info->is_lfi) {
+					sym[i].st_value = 
+			kage_symbol_value(mod->kage, kernel_symbol_name(ksym));
+					if (!sym[i].st_value) {
+						ret = -ENOMEM;
+						break;
+					}
+				}
+				else 
+#endif
+			sym[i].st_value = kernel_symbol_value(ksym);
 				break;
 			}
 
@@ -2295,7 +2307,7 @@ static int move_module(struct module *mod, struct load_info *info)
 
 	if (info->is_lfi) {
 		kage = kage_create(mod->name);
-		if (!kage) {
+		if (IS_ERR(kage)) {
 			return PTR_ERR(kage);
 		}
 		mod->kage = kage;
@@ -2374,18 +2386,6 @@ static int move_module(struct module *mod, struct load_info *info)
 		pr_debug("\t0x%lx 0x%.8lx %s\n", (long)shdr->sh_addr,
 			 (long)shdr->sh_size, info->secstrings + shdr->sh_name);
 	}
-#ifdef CONFIG_SECURITY_KAGE
-	const Elf_Shdr *symtab_shdr = &info->sechdrs[info->index.sym];
-	const Elf_Sym *syms = 
-		((void *)info->hdr + symtab_shdr->sh_offset);
-	const char *strtab = 
-		((void *)info->hdr + info->sechdrs[info->index.str].sh_offset);
-	const unsigned int num_syms = 
-		symtab_shdr->sh_size / sizeof(Elf_Sym);
-
-	kage_post_move(kage, info->sechdrs, info->hdr->e_shnum, 
-		       syms, num_syms, strtab);
-#endif
 
 	return 0;
 out_enomem:
@@ -2511,7 +2511,7 @@ static struct module *layout_and_allocate(struct load_info *info, int flags)
 	if (ndx) {
                 //FIXME: validate that __lfi is executable
 		pr_info("Loadable module is compiled LFI\n");
-		info->is_lfi = info->sechdrs[ndx].sh_offset;
+		info->is_lfi = true;
 	}
 #endif
 
@@ -2563,6 +2563,18 @@ static int post_relocation(struct module *mod, const struct load_info *info)
 	add_kallsyms(mod, info);
 
 	// FIXME: this is where LFI verification should go
+#ifdef CONFIG_SECURITY_KAGE
+	const Elf_Shdr *symtab_shdr = &info->sechdrs[info->index.sym];
+	const Elf_Sym *syms = 
+		((void *)info->hdr + symtab_shdr->sh_offset);
+	const char *strtab = 
+		((void *)info->hdr + info->sechdrs[info->index.str].sh_offset);
+	const unsigned int num_syms = 
+		symtab_shdr->sh_size / sizeof(Elf_Sym);
+
+	kage_post_relocation(mod->kage, info->sechdrs, info->hdr->e_shnum, 
+		       syms, num_syms, strtab);
+#endif
 
 	/* Arch-specific module finalizing. */
 	return module_finalize(info->hdr, info->sechdrs, mod);

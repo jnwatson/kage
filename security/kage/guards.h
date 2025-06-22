@@ -5,6 +5,14 @@
 
 struct kage;
 
+struct kage_host_call {
+	const char *name;
+	unsigned long guard_func;
+	unsigned long stub;
+};
+
+struct kage_host_call *find_host_call(const char *name);
+
 typedef unsigned long guard_t(struct kage *kage, unsigned long p0,
 			      unsigned long p1, unsigned long p2,
 			      unsigned long p3, unsigned long p4,
