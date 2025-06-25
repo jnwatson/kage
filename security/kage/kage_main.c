@@ -100,8 +100,6 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 			ret = ERR_PTR(-ENOMEM);
 			goto free_pages;
 		}
-		kage->pages[(start_offset >> PAGE_SHIFT) + i] =
-			tmp_pages[i];
 		set_bit((start_offset >> PAGE_SHIFT) + i,
 			kage->alloc_bitmap);
 	}
@@ -294,13 +292,11 @@ static int kage_init(struct kage *kage)
 	static u8 next_owner_id = 0;
 
 	spin_lock_init(&kage->lock);
-	// FIXME:  there has got to be a better way of tracking this
-	kage->pages = vzalloc(num_pages * sizeof(*kage->pages));
 	kage->alloc_bitmap = bitmap_zalloc(num_pages, GFP_KERNEL);
 	kage->next_open_memory_offs = PAGE_SIZE + 80UL * 1024;
 	BUG_ON(!is_valid_vaddr(kage, kage->base + kage->next_open_memory_offs,
 			       MOD_TEXT));
-	if (!kage->pages || !kage->alloc_bitmap) {
+	if (!kage->alloc_bitmap) {
 		err = -ENOMEM;
 		goto objstorage_err;
 	}
@@ -324,8 +320,6 @@ static int kage_init(struct kage *kage)
 tramp_err:
 	kfree(kage->objstorage);
 objstorage_err:
-	vfree(kage->pages);
-	kage->pages = 0;
 	bitmap_free(kage->alloc_bitmap);
 	return err;
 }
@@ -367,12 +361,19 @@ EXPORT_SYMBOL(kage_memory_free);
 
 void kage_memory_free_all(struct kage *kage)
 {
-	unsigned int nr_pages = KAGE_GUEST_SIZE >> PAGE_SHIFT;
-	int i;
+	unsigned long nr_pages = KAGE_GUEST_SIZE >> PAGE_SHIFT;
+	unsigned long i;
 
 	vunmap_range(kage->base, kage->base + KAGE_GUEST_SIZE);
-	for_each_set_bit(i, kage->alloc_bitmap, nr_pages)
-		__free_page(kage->pages[i]);
+	for_each_set_bit(i, kage->alloc_bitmap, nr_pages) {
+		struct page *page;
+		unsigned long vaddr = kage->base + (i << PAGE_SHIFT);
+
+		page = vmalloc_to_page((const void *)vaddr);
+		if (page) {
+			__free_page(page);
+		}
+	}
 
 	bitmap_zero(kage->alloc_bitmap, nr_pages);
 }
@@ -879,13 +880,10 @@ void kage_destroy(struct kage *kage)
 	kage_memory_free_all(kage);
 	kfree(kage->objstorage);
 	bitmap_free(kage->alloc_bitmap);
-	vfree(kage->pages);
 	for (i=0; i < kage->num_g2h_calls; i++) {
 		kfree(kage->g2h_calls[i]);
 	}
 	kages[kage->owner_id - 1] = NULL;
-	kage->pages = NULL;
-
 }
 EXPORT_SYMBOL(kage_destroy);
 

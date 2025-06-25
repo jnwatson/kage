@@ -40,7 +40,7 @@ struct kage_h2g_tramp_data_entry {
 };
 
 struct kage {
-	struct page **pages;
+	
         const char *modname;
 	spinlock_t lock;
 
