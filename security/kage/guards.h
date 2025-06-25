@@ -5,13 +5,16 @@
 
 struct kage;
 
-struct kage_host_call {
+struct kage_g2h_call {
 	const char *name;
-	unsigned long guard_func;
-	unsigned long stub;
+	unsigned long guard_func; // usually == *guard_sig
+	unsigned long stub; // == lfi_syscall_entry2
+	unsigned long host_func; // The actual kernel function
+        const char *sig; // from sigs.h
 };
 
-struct kage_host_call *find_host_call(const char *name);
+struct kage_g2h_call *create_g2h_call(const char *name, 
+					unsigned long target_func);
 
 typedef unsigned long guard_t(struct kage *kage, unsigned long p0,
 			      unsigned long p1, unsigned long p2,

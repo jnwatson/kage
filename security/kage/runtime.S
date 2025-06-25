@@ -6,29 +6,32 @@
 // Places the pointer to the active LFIProc in x21.
 .macro GET_PROC
 
-// Precondition: syspage (base of guest domain) in x21
-// Find the base of the stack (highest address) and load index into kage->procs
-//    The stack is 8KiB (0x2000) aligned. We find the top of the 8KiB block
-//    that SP is in, and then load the 32-bit word from the very top.
-    add   x16, sp, #KAGE_GUEST_STACK_SIZE // Add the stack size to SP to guarantee we are in the next block
-    and   x16, x16, #~(KAGE_GUEST_STACK_SIZE-1)              // Clear the lower 13 bits to get the base address of the *next* 8KiB block
-    ldr   w16, [x16, #-4]                 // Load the 32-bit index from the last 4 bytes of the current stack block.
-                                          // w16 now holds the index; the upper 32 bits of x16 are zeroed.
-// Check if the index is out of bounds (>= 8).
+/* Precondition: syspage (base of guest domain) in x21
+   Find the base of the stack (highest address) and load index into kage->procs
+   The stack is 8KiB (0x2000) aligned. We find the top of the 8KiB block
+   that SP is in, and then load the 32-bit word from the very top. */
+    // Add the stack size to SP to guarantee we are in the next block
+    add   x16, sp, #KAGE_GUEST_STACK_SIZE
+    // Clear the lower 13 bits to get the base address of the *next* 8KiB block
+    and   x16, x16, #~(KAGE_GUEST_STACK_SIZE-1)
+    // Load the 32-bit index from the last 4 bytes of the current stack block.
+    ldr   w16, [x16, #-4] 
+    // w16 now holds the index; the upper 32 bits of x16 are zeroed.
+    // Check if the index is out of bounds (>= 8).
     cmp   w16, #8
     b.ge  1f
 
     ldr   x21, [x21, #KAGE_LFISYS_PROCS_OFFS]          // Load LFISys->procs
 
-// Load LFISys->procs[i] into x21
+    // Load LFISys->procs[i] into x21
     ldr   x21, [x21, x16, LSL #3]
     b     2f
 
 1:
-    /* FIXME: this is attacker controlled, but bounds checked by the other 
+    /* FIXME: this is attacker controlled, but bounds checked by the other
      * side.  Can attacker do bad things by hijacking another thread context?
      */
-    mov   x21, #0  
+    mov   x21, #0
     brk #0
 2:  // done
 .endm
@@ -67,7 +70,7 @@
 .endm
 
 /* This code is called from guest to return back to the host when called
- * by lfi_asm_invoke */
+ * by lfi_asm_invoke, as well as when the guest calls into the host */
 .p2align 4
 .globl lfi_ret
 lfi_ret:
@@ -105,6 +108,7 @@ lfi_asm_invoke:
 	br x22
 	brk #0
 
+/* FIXME: obsolete */
 /* This code is jumped-to when a guest calls a host kernel function.
  * Its address is stored in the syspage's rtcalls. */
 .globl lfi_syscall_entry
@@ -171,39 +175,101 @@ lfi_restore_regs:
  * in the code section as many times as there are different guest kernel calls
  * */
 
-/* This code is repeated in the trampoline code section.  Host calls in the
+/* This code is repeated in the g2h text region.  Host calls in the
  * guest resolve to an instance of this */
-.globl lfi_trampoline
-lfi_trampoline:
-	 ldr     x17, . + (KAGE_TRAMP_REGION_SIZE + PAGE_SIZE)
-	 ldr     x18, . + (KAGE_TRAMP_REGION_SIZE + PAGE_SIZE) + 4
+.globl lfi_g2h_trampoline
+lfi_g2h_trampoline:
+	 ldr     x17, . + (KAGE_G2H_TRAMP_REGION_SIZE)
+	 ldr     x18, . + (KAGE_G2H_TRAMP_REGION_SIZE) + 4
 	 br      x18
-	 brk     #0x0
+	 brk     #0
 
-.globl lfi_trampoline_end
-lfi_trampoline_end:
+.globl lfi_g2h_trampoline_end
+lfi_g2h_trampoline_end:
 
-/* Precondition: x17 contains the guard function. */
+/* This code is repeated in h2g text region */
+.globl lfi_h2g_trampoline
+lfi_h2g_trampoline:
+	 ldr     x17, . + (KAGE_G2H_TRAMP_REGION_SIZE)
+	 ldr     x18, . + (KAGE_G2H_TRAMP_REGION_SIZE) + 4
+	 b setup_kage_call
+	 brk     #0
+
+.globl lfi_h2g_trampoline_end
+lfi_h2g_trampoline_end:
+
+setup_kage_call:
+	// Shift two registers to the right for kage * and fn params
+	mov x7, x5
+	mov x6, x4
+	mov x5, x3
+	mov x4, x2
+	mov x3, x1
+	mov x2, x0
+	mov x1, x18
+	mov x0, x17
+	bl kage_call
+	ret
+
+/* Precondition: x17 == struct kage_g2h_call *. */
 /* This code is jumped to from lfi_trampoline */
-.globl lfi_syscall_entry_new
-lfi_syscall_entry_new:
+.globl lfi_syscall_entry2
+lfi_syscall_entry2:
 	SAVE_PARTIAL_REGS
-	// x21 now contains struct LFIProc *
-	ldr x16, [x21]         // load proc->kstackp into sp
+	// struct LFIProc *proc == x21 now
+	// sp = proc->kstackp
+	ldr x16, [x21]
 	mov sp, x16
-	str x21, [sp, #-16]!  // save LFIProc for later
+	str x21, [sp, #-16]! // save proc for after call
+	mov x0, x21 // 1st arg: proc ptr
+	mov x1, x17 // 2nd arg: kage_host_call ptr
+	ldr x17, [x17, KAGE_G2H_CALL_GUARD_FUNC_OFFS]
+	blr x17 // Call guard function
+	ldr x17, [sp], 16  // restore proc
+	// proc->regs[0] = return value from guard func
+	str x0, [x17, KAGE_LFIPROC_REGS_OFFS+16*0]
+	mov x0, x17 // x0 = proc
+	b  lfi_restore_partial_regs // head back to guest
+	brk #0
+
+/* Precondition: x17 == struct kage_host_call *. */
+/* This code is jumped to from lfi_trampoline.  This entry is appropriate for
+ * calling to manually coded guards that want (kage, p0, ...) parameters
+ */
+.globl lfi_syscall_entry_override
+lfi_syscall_entry_override:
+	SAVE_PARTIAL_REGS
+	// struct LFIProc *proc == x21 now
+
+	// sp = proc->kstackp
+	ldr x16, [x21]
+	mov sp, x16
+
+	str x21, [sp, #-16]! // save proc for after call
+
 	/* Shift the argument registers to the right so kage param is first */
 	mov x6, x5
 	mov x5, x4
+	mov x4, x3
 	mov x3, x2
 	mov x2, x1
 	mov x1, x0
 	add x0, x21, KAGE_LFIPROC_KAGE_OFFS // Move kage * into first argument
+
 	blr x17 // Jump to guard function
 	ldr x17, [sp], 16  // restore LFIProc *
-	// Store return value into proc->regs[0]
+	// proc->regs[0] = return value from guard func
 	str x0, [x17, KAGE_LFIPROC_REGS_OFFS+16*0]
 	mov x0, x17 // LFIProc * into x0
 	b  lfi_restore_partial_regs
 	brk #0
+
+/* Precondition: x17 == struct kage_host_call *. */
+.globl lfi_syscall_entry_variadic
+lfi_syscall_entry_variadic:
+//FIXME: implement
+	ldr x0, 0
+	ret
+
+
 

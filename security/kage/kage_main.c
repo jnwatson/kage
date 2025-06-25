@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
+#include "linux/gfp_types.h"
 #include <linux/debugfs.h>
 #include <linux/fs.h>
 #include <linux/hugetlb.h>
@@ -23,28 +24,33 @@
 #include "guards.h"
 #include "objdesc.h"
 
+static_assert(offsetof(struct LFIProc, kage) == KAGE_LFIPROC_KAGE_OFFS, 
+	      "Inconsistency among proc.h and kage_asm.h");
 static_assert(offsetof(struct LFIProc, regs) == KAGE_LFIPROC_REGS_OFFS, 
 	      "Inconsistency among proc.h and kage_asm.h");
 static_assert(offsetof(struct LFISys, procs) == KAGE_LFISYS_PROCS_OFFS,
 	      "Inconsistency among proc.h and kage_asm.h");
+static_assert(offsetof(struct kage_g2h_call, guard_func) == 
+			KAGE_G2H_CALL_GUARD_FUNC_OFFS,
+	      "Inconsistency among guards.h and kage_asm.h");
 
-#define MODULE_NAME "kage"
 #define VM_AREA_SIZE (64UL * 1024 * 1024 * 1024)
 #define MAX_GUESTS (VM_AREA_SIZE / KAGE_GUEST_SIZE - 1)
 
-static int kage_objstorage_init(struct kage_objstorage **storage_ptr);
+// FIXME: avoid alloc inside of spinlock
 
-extern void lfi_trampoline_end(void);
-extern void lfi_trampoline(void);
+static int kage_objstorage_init(struct kage_objstorage **storage_ptr);
 
 int vmap_pages_range_noflush(unsigned long addr, unsigned long end,
 			     pgprot_t prot, struct page **pages,
 			     unsigned int page_shift);
 
 struct vm_struct *vm_area;
-spinlock_t lock;
+unsigned long vm_area_start;
+unsigned long vm_area_end;
 
-static struct kage kages[MAX_GUESTS];
+static struct kage *kages[MAX_GUESTS];
+static spinlock_t module_lock;
 
 // Returns true if compatible with LFI Spec 2.5 dense mode.
 bool is_valid_vaddr(struct kage const *kage, unsigned long addr,
@@ -55,9 +61,9 @@ bool is_valid_vaddr(struct kage const *kage, unsigned long addr,
 	if (addr < kage->base)
 		return false;
 	if (offset < PAGE_SIZE + 80UL * 1024 ||
-	    offset > KAGE_GUEST_SIZE - 80UL * 1024)
+	    offset >= KAGE_GUEST_SIZE - 80UL * 1024)
 		return false;
-	if (offset > KAGE_GUEST_SIZE - 128UL * 1024 && mod_mem_type_is_text(type))
+	if (offset >= KAGE_GUEST_SIZE - 128UL * 1024 && mod_mem_type_is_text(type))
 		return false;
 	return true;
 }
@@ -85,9 +91,8 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 		return 0;
 	}
 
-	// FIXME: we need a more fine-grained lock
 	if (do_lock)
-		spin_lock_irqsave(&lock, irq_flags);
+		spin_lock_irqsave(&kage->lock, irq_flags);
 
 	for (i = 0; i < nr_pages; i++) {
 		tmp_pages[i] = alloc_page(flags);
@@ -127,7 +132,7 @@ free_pages:
 	}
 cleanup:
 	if (do_lock)
-		spin_unlock_irqrestore(&lock, irq_flags);
+		spin_unlock_irqrestore(&kage->lock, irq_flags);
 	kfree(tmp_pages);
 	return ret;
 }
@@ -140,8 +145,9 @@ static void *kage_memory_alloc_aligned(struct kage *kage, size_t size, enum
 				       alignment)
 {
 	unsigned long irq_flags;
+	void * ret;
 
-	spin_lock_irqsave(&lock, irq_flags);
+	spin_lock_irqsave(&kage->lock, irq_flags);
 	unsigned long start = ALIGN(kage->base + kage->next_open_memory_offs,
 				    alignment);
 	unsigned long end = ALIGN(start + size, alignment);
@@ -150,11 +156,13 @@ static void *kage_memory_alloc_aligned(struct kage *kage, size_t size, enum
 	if (!is_valid_vaddr(kage, start, type) ||
 	    !is_valid_vaddr(kage, end, type)) {
 		pr_err("%s: cannot allocate size %zu\n", MODULE_NAME, size);
-		return ERR_PTR(-ENOMEM);
+		ret = ERR_PTR(-ENOMEM);
+		goto cleanup;
 	}
 
-	void * ret = kage_memory_alloc_explicit(kage, start, end, type, false, flags);
-	spin_unlock_irqrestore(&lock, irq_flags);
+	ret = kage_memory_alloc_explicit(kage, start, end, type, false, flags);
+cleanup:
+	spin_unlock_irqrestore(&kage->lock, irq_flags);
 	return ret;
 }
 
@@ -171,41 +179,49 @@ static void kage_free_closures(struct kage *kage)
 	assoc_array_destroy(&kage->closures, NULL);
 }
 
-/* Allocate two chunks of size KAGE_TRAMP_REGION_SIZE, one page apart, one for the
- * text, and one for the literal pool */
+/* Allocate two chunks twice, one page apart, one for the text, and one for the
+ * literal pool */
 static int alloc_trampolines(struct kage *kage)
 {
-	void *tramp_text_mem = 
-		kage_memory_alloc(kage, KAGE_TRAMP_REGION_SIZE, MOD_TEXT, 
-				  GFP_KERNEL);
-	if (!tramp_text_mem)
-		return -ENOMEM;
-	unsigned long data_mem_start = (unsigned long)tramp_text_mem +
-			KAGE_TRAMP_REGION_SIZE + PAGE_SIZE;
+	// g2h is allocated in guest space
+	kage->g2h_tramp_text = kage->g2h_tramp_data = NULL;
+	kage->h2g_tramp_text = kage->h2g_tramp_data = NULL;
 
-	void *tramp_data_mem = 
-		kage_memory_alloc_explicit(kage, data_mem_start, 
-					   data_mem_start + KAGE_TRAMP_REGION_SIZE, 
-					   MOD_RODATA,
-					   GFP_KERNEL, true);
-	if (!tramp_data_mem) {
-		kage_memory_free(kage, tramp_text_mem);
-		return -ENOMEM;
-	}
-	kage->tramp_text = tramp_text_mem;
-	kage->tramp_data = tramp_data_mem;
-	pr_info("trampoline text=%llx, data=%llx\n", (u64)tramp_text_mem, 
-		(u64)tramp_data_mem);
+	kage->g2h_tramp_text = 
+		kage_memory_alloc(kage, 2 * KAGE_G2H_TRAMP_REGION_SIZE, MOD_TEXT, 
+				  GFP_KERNEL);
+	if (!kage->g2h_tramp_text)
+		goto on_err;
+
+	kage->g2h_tramp_data = (void *)((unsigned long)kage->g2h_tramp_text +
+			KAGE_G2H_TRAMP_REGION_SIZE);
+
+	// h2g is allocated in host space
+	kage->h2g_tramp_text = vzalloc(2 * KAGE_H2G_TRAMP_REGION_SIZE);
+	if (!kage->h2g_tramp_text)
+		goto on_err;
+	kage->h2g_tramp_data = (void *)((unsigned long)kage->h2g_tramp_text +
+			KAGE_H2G_TRAMP_REGION_SIZE);
+
+	pr_info("g2h trampoline text=%llx, data=%llx\n", (u64)kage->g2h_tramp_text, 
+		(u64)kage->g2h_tramp_data);
+
 	return 0;
+
+on_err:
+	kage_memory_free(kage, kage->g2h_tramp_text);
+	kage_memory_free(kage, kage->g2h_tramp_data);
+	vfree(kage->h2g_tramp_text);
+	vfree(kage->h2g_tramp_data);
+	return -ENOMEM;
 }
 
-struct tramp_data_entry {
-	unsigned long target; // points to a guard function
-	unsigned long trampoline; // points to a stub 
-	//unsigned long dummy;
+struct g2h_tramp_data_entry {
+	const struct kage_g2h_call *call;
+	u64 trampoline; // points to lfi_syscall_entry2
 };
 
-static_assert(sizeof(struct tramp_data_entry)==KAGE_TRAMP_SIZE);
+static_assert(sizeof(struct g2h_tramp_data_entry)==KAGE_G2H_TRAMP_SIZE);
 
 // tmp
 extern guard_t *syscall_to_guard[KAGE_SYSCALL_COUNT];
@@ -213,51 +229,59 @@ extern guard_t *syscall_to_guard[KAGE_SYSCALL_COUNT];
 static void fill_trampolines(struct kage *kage)
 {
 	unsigned int i;
-	unsigned long tramp_loc = (unsigned long)kage->tramp_text;
-	for (i=0; i<kage->num_host_calls; i++) {
-		memcpy((void *)tramp_loc, &lfi_trampoline, KAGE_TRAMP_SIZE);
-		tramp_loc += KAGE_TRAMP_SIZE;
+	unsigned long tramp_loc = (unsigned long)kage->g2h_tramp_text;
+	for (i=0; i<kage->num_g2h_calls; i++) {
+		memcpy((void *)tramp_loc, &lfi_g2h_trampoline, KAGE_G2H_TRAMP_SIZE);
+		tramp_loc += KAGE_G2H_TRAMP_SIZE;
 	}
-	size_t left = (unsigned long)kage->tramp_text + KAGE_TRAMP_REGION_SIZE - tramp_loc;
+	size_t left = (unsigned long)kage->g2h_tramp_text + KAGE_G2H_TRAMP_REGION_SIZE - tramp_loc;
 	memset((void *)tramp_loc, 0, left);
 
-	struct tramp_data_entry* entry = kage->tramp_data;
-	for (i=0; i<kage->num_host_calls; i++) {
-		struct kage_host_call * host_call = kage->host_calls[i];
-		entry[i].target = host_call->guard_func;
+	struct g2h_tramp_data_entry* entry = kage->g2h_tramp_data;
+	for (i=0; i<kage->num_g2h_calls; i++) {
+		struct kage_g2h_call * host_call = kage->g2h_calls[i];
+		entry[i].call = host_call;
 		entry[i].trampoline = host_call->stub;
 	}
-	left = (unsigned long)kage->tramp_data + KAGE_TRAMP_REGION_SIZE - 
+	left = (unsigned long)kage->g2h_tramp_data + KAGE_G2H_TRAMP_REGION_SIZE - 
 			(unsigned long)(&entry[i]);
 	memset(&entry[i], 0, left);
+
+	tramp_loc = (unsigned long)kage->h2g_tramp_text;
+	for (i=0; i<KAGE_MAX_H2G_CALLS; i++) {
+		memcpy((void *)tramp_loc, &lfi_h2g_trampoline, KAGE_H2G_TRAMP_SIZE);
+		tramp_loc += KAGE_H2G_TRAMP_SIZE;
+	}
+
 }
 
 /* Returns the absolute address in the guest of the trampoline for the target of
  * a guest's call of a function in the kernel or another module */
-unsigned long kage_symbol_value(struct kage *kage, const char *name)
+unsigned long kage_symbol_value(struct kage *kage, const char *name, 
+				unsigned long target_func)
 {
 	unsigned int i;
-	for (i=0; i<kage->num_host_calls; i++) {
+	for (i=0; i<kage->num_g2h_calls; i++) {
 		/* We can compare strings by address here because they point to
 		 the same structure */
-		if (name == kage->host_calls[i]->name)
-			return (unsigned long)kage->tramp_text + 
-				i * KAGE_TRAMP_SIZE;
+		if (name == kage->g2h_calls[i]->name)
+			return (unsigned long)kage->g2h_tramp_text + 
+				i * KAGE_G2H_TRAMP_SIZE;
 	}
-	if (kage->num_host_calls >= ARRAY_SIZE(kage->host_calls)) {
+	if (kage->num_g2h_calls >= ARRAY_SIZE(kage->g2h_calls)) {
 		pr_err(MODULE_NAME 
 		       ": exceeded max external call sites from guest\n");
 		return 0;
 	}
-	struct kage_host_call *host_call = find_host_call(name);
-	if (!host_call) {
+	struct kage_g2h_call *host_call = create_g2h_call(name, target_func);
+	if (IS_ERR(host_call)) {
 		pr_err(MODULE_NAME 
-		       ": missing guard for external call %s\n", name);
+		       ": error %pe creating host call %s\n", host_call, name);
 		return 0;
 	}
-	unsigned long ret = (unsigned long)kage->tramp_text + 
-				kage->num_host_calls * KAGE_TRAMP_SIZE;
-	kage->host_calls[kage->num_host_calls++] = host_call;
+	unsigned long ret = (unsigned long)kage->g2h_tramp_text + 
+				kage->num_g2h_calls * KAGE_G2H_TRAMP_SIZE;
+	kage->g2h_calls[kage->num_g2h_calls++] = host_call;
 	pr_info(MODULE_NAME ": kage_symbol_value %s=%lx\n", name, ret);
 	return ret;
 }
@@ -265,15 +289,14 @@ unsigned long kage_symbol_value(struct kage *kage, const char *name)
 
 static int kage_init(struct kage *kage)
 {
-	unsigned long nr_pages = VM_AREA_SIZE >> PAGE_SHIFT;
+	unsigned long num_pages = KAGE_GUEST_SIZE >> PAGE_SHIFT;
 	int i, err;
 	static u8 next_owner_id = 0;
 
-	if (next_owner_id == KAGE_OWNER_GLOBAL)
-		return -ENOSPC;
-
-	kage->pages = vzalloc(nr_pages * sizeof(*kage->pages));
-	kage->alloc_bitmap = bitmap_zalloc(nr_pages, GFP_KERNEL);
+	spin_lock_init(&kage->lock);
+	// FIXME:  there has got to be a better way of tracking this
+	kage->pages = vzalloc(num_pages * sizeof(*kage->pages));
+	kage->alloc_bitmap = bitmap_zalloc(num_pages, GFP_KERNEL);
 	kage->next_open_memory_offs = PAGE_SIZE + 80UL * 1024;
 	BUG_ON(!is_valid_vaddr(kage, kage->base + kage->next_open_memory_offs,
 			       MOD_TEXT));
@@ -292,6 +315,8 @@ static int kage_init(struct kage *kage)
 		kage->procs[i] = NULL;
 	kage->open_proc_idx = 0;
 	assoc_array_init(&kage->closures);
+	kage->num_g2h_calls = 0;
+	kage->num_h2g_calls = 0;
 	err = alloc_trampolines(kage);
 	if (err)
 		goto tramp_err;
@@ -307,6 +332,8 @@ objstorage_err:
 
 void kage_memory_free(struct kage *kage, void *vaddr)
 {
+	if (!vaddr)
+		return;
 //FIXME
 #if 0
 	unsigned long vaddr_offset = vaddr - kage->base;
@@ -381,20 +408,6 @@ static void init_debugfs(void)
 			MODULE_NAME);
 	}
 }
-
-// Set the start addrs of the kage
-static void init_kages(void)
-{
-	unsigned long addr = ALIGN((unsigned long)vm_area->addr, KAGE_GUEST_SIZE);
-	int i;
-
-	for (i = 0; i < MAX_GUESTS; i++)
-		kages[i].base = addr;
-
-	addr += KAGE_GUEST_SIZE;
-	BUG_ON(addr > ((unsigned long)vm_area->addr + vm_area->size));
-}
-
 
 static struct kage_objstorage *kage_global_objstorage;
 
@@ -487,6 +500,9 @@ u64 kage_objstorage_alloc(struct kage *kage, bool is_global,
 			break;
 		}
 	}
+	if (!ret) {
+		pr_err(MODULE_NAME ": objstorage exhausted\n");
+	}
 
 	spin_unlock_irqrestore(&storage->lock, flags);
 	return ret;
@@ -500,18 +516,18 @@ static int __init kagemodule_init(void)
 	/* Initialize context */
 	init_debugfs();
 
-	spin_lock_init(&lock);
-
 	err = kage_objstorage_init(&kage_global_objstorage);
 	if (err)
 		return err;
+
+	spin_lock_init(&module_lock);
 
 	/* Allocate VM area */
 	vm_area = get_vm_area(VM_AREA_SIZE, VM_ALLOC);
 	if (!vm_area)
 		return -ENOMEM;
-
-	init_kages();
+	vm_area_start = ALIGN((unsigned long)vm_area->addr, KAGE_GUEST_SIZE);
+	vm_area_end = vm_area_start + MAX_GUESTS * KAGE_GUEST_SIZE - 1;
 
 	vmalloc_start_addr = (unsigned long)VMALLOC_START;
 	vmalloc_end_addr = (unsigned long)VMALLOC_END;
@@ -528,24 +544,18 @@ static int __init kagemodule_init(void)
 static struct kage *alloc_kage(void)
 {
 	struct kage *kage = NULL;
-	static int nextidx;
-	int i = nextidx;
+	static int nextidx = 1;
 	unsigned long irq_flags;
+	kage = kzalloc(sizeof(*kage), GFP_KERNEL);
+	if (!kage)
+		return ERR_PTR(-ENOMEM);
 
-	spin_lock_irqsave(&lock, irq_flags);
+	spin_lock_irqsave(&module_lock, irq_flags);
+	kage->owner_id = nextidx++;
+	spin_unlock_irqrestore(&module_lock, irq_flags);
 
-	int last = i ? i - 1 : MAX_GUESTS - 1;
-
-	do {
-		if (!kages[i].pages) {
-			kage = &kages[i];
-			break;
-		}
-		i = (i + 1) % MAX_GUESTS;
-	} while (i != last);
-
-	nextidx = i++ % MAX_GUESTS;
-	spin_unlock_irqrestore(&lock, irq_flags);
+	kage->base = (kage->owner_id - 1) * KAGE_GUEST_SIZE + vm_area_start;
+	BUG_ON(kage->base + KAGE_GUEST_SIZE > vm_area_end);
 
 	return kage;
 }
@@ -585,6 +595,7 @@ static int setup_lfisys(struct kage *kage)
 		return PTR_ERR(sysmem);
 
 	kage->sys = (struct LFISys *)kage->base;
+        // FIXME: remove rtcalls
 	kage->sys->rtcalls[0] = (uintptr_t)&lfi_syscall_entry;
 	kage->sys->rtcalls[3] = (uintptr_t)&lfi_ret;
 	kage->sys->procs = &kage->procs;
@@ -644,51 +655,76 @@ static unsigned long find_symbol_address(const struct kage * kage,
 }
 
 // Mark text RX and data R
-void protect_trampolines(struct kage *kage)
+static int protect_trampolines(struct kage *kage)
 {
 	int err;
 
-	err = set_memory_x((unsigned long)kage->tramp_text,
-			   KAGE_TRAMP_REGION_SIZE >> PAGE_SHIFT);
-	if (err)
-		pr_warn("kage: Failed to set trampoline text executable: %pe\n", ERR_PTR(err));
+	struct {
+		unsigned long text;
+		size_t size;
+	} parms[] = {
+		{(unsigned long)kage->g2h_tramp_text, 
+			KAGE_G2H_TRAMP_REGION_SIZE },
+		{(unsigned long)kage->h2g_tramp_text, 
+			KAGE_H2G_TRAMP_REGION_SIZE },
+	};
 
-	err = set_memory_ro((unsigned long)kage->tramp_text,
-			    KAGE_TRAMP_REGION_SIZE >> PAGE_SHIFT);
-	if (err)
-		pr_warn("kage: Failed to set trampoline text read-only: %pe\n", ERR_PTR(err));
+	for (int i=0; i<ARRAY_SIZE(parms); i++) {
+		err = set_memory_x(parms[i].text, parms[i].size >> PAGE_SHIFT);
+		if (err) {
+			pr_err(MODULE_NAME ": Failed to set trampoline text "
+			       "executable: %pe\n", ERR_PTR(err));
+			return err;
+		}
 
+		err = set_memory_ro(parms[i].text, parms[i].size >> PAGE_SHIFT);
+		if (err) {
+			pr_err(MODULE_NAME ": Failed to set trampoline text "
+			       "read-only: %pe\n", ERR_PTR(err));
+			return err;
+		}
 
-	flush_icache_range((unsigned long)kage->tramp_text,
-			   (unsigned long)kage->tramp_text + KAGE_TRAMP_REGION_SIZE);
+		flush_icache_range(parms[i].text, parms[i].text + parms[i].size);
+	}
 
-	err = set_memory_ro((unsigned long)kage->tramp_data,
-			    KAGE_TRAMP_REGION_SIZE >> PAGE_SHIFT);
-	if (err)
-		pr_warn("kage: Failed to set trampoline data RO: %pe\n", ERR_PTR(err));
+	err = set_memory_ro((unsigned long)kage->g2h_tramp_data,
+			    KAGE_G2H_TRAMP_REGION_SIZE >> PAGE_SHIFT);
+	if (err) {
+		pr_err("kage: Failed to set trampoline data RO: %pe\n",
+			ERR_PTR(err));
+		return err;
+	}
+	return 0;
 }
 
-void kage_post_relocation(struct kage *kage, 
+int kage_post_relocation(struct kage *kage, 
 		    const Elf_Shdr *sechdrs,
                     unsigned int shnum,
                     const Elf_Sym *symtab,
                     unsigned int num_syms,
                     const char *strtab)
 {
+
+	// FIXME:  dynamically allocate in guest
 	unsigned long do_ret = find_symbol_address(kage, sechdrs, shnum, 
 						   symtab, num_syms, strtab, 
 						   "do_ret");
-	pr_info("do_ret addr=0x%lx\n", do_ret);
+	pr_info("do_ret addr=0x%lx\n", do_ret); // DEBUG
 	kage->exit_addr = do_ret;
 
 	fill_trampolines(kage);
-	protect_trampolines(kage);
+	int err = protect_trampolines(kage);
+	if (err)
+		return err;
+	return 0;
 }
 
 static void do_linktime_assertions(void) 
 {
-	BUG_ON((unsigned long)&lfi_trampoline_end - 
-	       (unsigned long)&lfi_trampoline != KAGE_TRAMP_SIZE);
+	BUG_ON((unsigned long)&lfi_g2h_trampoline_end - 
+	       (unsigned long)&lfi_g2h_trampoline != KAGE_G2H_TRAMP_SIZE);
+	BUG_ON((unsigned long)&lfi_h2g_trampoline_end - 
+	       (unsigned long)&lfi_h2g_trampoline != KAGE_H2G_TRAMP_SIZE);
 
 }
 struct kage *kage_create(const char *modname)
@@ -718,7 +754,7 @@ struct kage *kage_create(const char *modname)
 
 	return kage;
 on_err:
-	kage_free(kage);
+	kage_destroy(kage);
 	return ERR_PTR(err);
 }
 EXPORT_SYMBOL(kage_create);
@@ -835,17 +871,23 @@ static ssize_t debugfs_trigger_write(struct file *debug_file_node,
 	return count;
 }
 
-void kage_free(struct kage *kage)
+void kage_destroy(struct kage *kage)
 {
+	unsigned int i;
 	pr_info("%s %s\n", MODULE_NAME, __func__);
 	kage_free_closures(kage);
 	kage_memory_free_all(kage);
 	kfree(kage->objstorage);
 	bitmap_free(kage->alloc_bitmap);
 	vfree(kage->pages);
+	for (i=0; i < kage->num_g2h_calls; i++) {
+		kfree(kage->g2h_calls[i]);
+	}
+	kages[kage->owner_id - 1] = NULL;
 	kage->pages = NULL;
+
 }
-EXPORT_SYMBOL(kage_free);
+EXPORT_SYMBOL(kage_destroy);
 
 static void __exit kagemodule_exit(void)
 {
@@ -853,10 +895,9 @@ static void __exit kagemodule_exit(void)
 
 	pr_info(MODULE_NAME ": Exiting\n");
 	for (i = 0; i < MAX_GUESTS; i++) {
-		struct kage *kage = &kages[i];
+		struct kage *kage = kages[i];
 
-		if (kage->pages)
-			kage_free(kage);
+		kage_destroy(kage);
 	}
 	kfree(kage_global_objstorage);
 	vfree(vm_area);

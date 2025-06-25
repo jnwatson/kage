@@ -1277,7 +1277,7 @@ static void free_mod_mem(struct module *mod)
 		module_memory_free(mod->mem[MOD_DATA].base, MOD_DATA);
 	} else {
 		// This frees all the module memory
-		kage_free(mod->kage);
+		kage_destroy(mod->kage);
 	}
 #else
 	module_memory_free(mod->mem[MOD_DATA].base, MOD_DATA);
@@ -1465,7 +1465,9 @@ static int simplify_symbols(struct module *mod, const struct load_info *info)
 #ifdef CONFIG_SECURITY_KAGE
 				if (info->is_lfi) {
 					sym[i].st_value = 
-			kage_symbol_value(mod->kage, kernel_symbol_name(ksym));
+			kage_symbol_value(mod->kage, 
+					  kernel_symbol_name(ksym),
+					  kernel_symbol_value(ksym));
 					if (!sym[i].st_value) {
 						ret = -ENOMEM;
 						break;
@@ -2572,8 +2574,11 @@ static int post_relocation(struct module *mod, const struct load_info *info)
 	const unsigned int num_syms = 
 		symtab_shdr->sh_size / sizeof(Elf_Sym);
 
-	kage_post_relocation(mod->kage, info->sechdrs, info->hdr->e_shnum, 
-		       syms, num_syms, strtab);
+	int err = kage_post_relocation(mod->kage, info->sechdrs,
+				       info->hdr->e_shnum, syms, num_syms,
+				       strtab);
+	if (err < 0)
+		return err;
 #endif
 
 	/* Arch-specific module finalizing. */
