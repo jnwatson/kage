@@ -30,6 +30,8 @@
 1:
     /* FIXME: this is attacker controlled, but bounds checked by the other
      * side.  Can attacker do bad things by hijacking another thread context?
+     * Solution: allocate an extra page when the stack is allocated, and then
+     * mark it RO
      */
     mov   x21, #0
     brk #0
@@ -115,12 +117,11 @@ lfi_asm_invoke:
 lfi_syscall_entry:
 	SAVE_PARTIAL_REGS
 	// x21 now contains Proc*
-	ldr x1, [x21]         // load stack
+	ldr x1, [x21]         // restore host sp
 	mov sp, x1
-	str x21, [sp, #-16]!
-	mov x0, x21
+	mov x0, x21     // pass LFIProc * as first parameter
 	bl lfi_syscall_handler
-	ldr x0, [sp], 16
+	mov x0, x21
 	b  lfi_restore_partial_regs
 	brk #0
 
@@ -245,10 +246,9 @@ lfi_syscall_entry_override:
 	// sp = proc->kstackp
 	ldr x16, [x21]
 	mov sp, x16
-	// FIXME: unnecessary: callee save
-	str x21, [sp, #-16]! // save proc for after call
 
 	/* Shift the argument registers to the right so kage param is first */
+	mov x7, x6
 	mov x6, x5
 	mov x5, x4
 	mov x4, x3
@@ -259,10 +259,9 @@ lfi_syscall_entry_override:
 	ldr x17, [x17, KAGE_G2H_CALL_GUARD_FUNC_OFFS]
 
 	blr x17 // Call guard function
-	ldr x17, [sp], 16  // restore LFIProc *
 	// proc->regs[0] = return value from guard func
-	str x0, [x17, KAGE_LFIPROC_REGS_OFFS+16*0]
-	mov x0, x17 // LFIProc * into x0
+	str x0, [x21, KAGE_LFIPROC_REGS_OFFS+16*0]
+	mov x0, x21 // LFIProc * into x0
 	b  lfi_restore_partial_regs
 	brk #0
 
