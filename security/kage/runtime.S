@@ -212,7 +212,7 @@ setup_kage_call:
 	ret
 
 /* Precondition: x17 == struct kage_g2h_call *. */
-/* This code is jumped to from lfi_trampoline */
+/* This code is jumped to from lfi_g2h_trampoline */
 .globl lfi_syscall_entry2
 lfi_syscall_entry2:
 	SAVE_PARTIAL_REGS
@@ -220,9 +220,10 @@ lfi_syscall_entry2:
 	// sp = proc->kstackp
 	ldr x16, [x21]
 	mov sp, x16
+	// FIXME: unnecessary: callee save
 	str x21, [sp, #-16]! // save proc for after call
 	mov x0, x21 // 1st arg: proc ptr
-	mov x1, x17 // 2nd arg: kage_host_call ptr
+	mov x1, x17 // 2nd arg: kage_g2h_call ptr
 	ldr x17, [x17, KAGE_G2H_CALL_GUARD_FUNC_OFFS]
 	blr x17 // Call guard function
 	ldr x17, [sp], 16  // restore proc
@@ -233,7 +234,7 @@ lfi_syscall_entry2:
 	brk #0
 
 /* Precondition: x17 == struct kage_host_call *. */
-/* This code is jumped to from lfi_trampoline.  This entry is appropriate for
+/* This code is jumped to from lfi_g2h_trampoline.  This entry is appropriate for
  * calling to manually coded guards that want (kage, p0, ...) parameters
  */
 .globl lfi_syscall_entry_override
@@ -244,7 +245,7 @@ lfi_syscall_entry_override:
 	// sp = proc->kstackp
 	ldr x16, [x21]
 	mov sp, x16
-
+	// FIXME: unnecessary: callee save
 	str x21, [sp, #-16]! // save proc for after call
 
 	/* Shift the argument registers to the right so kage param is first */
@@ -255,8 +256,9 @@ lfi_syscall_entry_override:
 	mov x2, x1
 	mov x1, x0
 	add x0, x21, KAGE_LFIPROC_KAGE_OFFS // Move kage * into first argument
+	ldr x17, [x17, KAGE_G2H_CALL_GUARD_FUNC_OFFS]
 
-	blr x17 // Jump to guard function
+	blr x17 // Call guard function
 	ldr x17, [sp], 16  // restore LFIProc *
 	// proc->regs[0] = return value from guard func
 	str x0, [x17, KAGE_LFIPROC_REGS_OFFS+16*0]
@@ -264,12 +266,74 @@ lfi_syscall_entry_override:
 	b  lfi_restore_partial_regs
 	brk #0
 
-/* Precondition: x17 == struct kage_host_call *. */
+/* Precondition: x17 == struct kage_g2h_call *. */
 .globl lfi_syscall_entry_variadic
 lfi_syscall_entry_variadic:
-//FIXME: implement
-	ldr x0, 0
-	ret
+	SAVE_PARTIAL_REGS
+	// x21 now contains LFIProc*
+	// x1 still contains guest sp
+
+	// Copy Guest Stack Arguments to Host Stack
+
+	// Get the host kernel stack pointer (offset 0 from LFIProc*)
+	ldr   x19, [x21]
+
+	// Calculate the top of the guest's current stack
+	add   x20, x1, #KAGE_GUEST_STACK_SIZE
+	and   x20, x20, #~(KAGE_GUEST_STACK_SIZE-1)
+
+	// Calculate the total space used on the guest stack
+	sub   x20, x20, x1
+
+	// Determine the number of bytes to copy (min(used, 256))
+	mov   x15, #KAGE_MAX_STACK_ARGS_SIZE
+	cmp   x20, x15
+	csel  x20, x20, x15, lo
+	
+	mov x22, x17  // preserve kage_g2h_call
+
+	// Make space on the host stack
+	sub   x19, x19, x20
+
+	mov   x0, x19   // dest: new (host) sp
+	mov   x1, sp    // src: current (guest) sp
+        mov   x2, x20   // size
+	bl    memcpy
+
+	// Switch to the host stack 
+	mov   sp, x0    // memcpy returns dest in x0
+
+	ldp x0, x1,   [x21, KAGE_LFIPROC_REGS_OFFS+16*0]
+	ldp x2, x3,   [x21, KAGE_LFIPROC_REGS_OFFS+16*1]
+	ldp x4, x5,   [x21, KAGE_LFIPROC_REGS_OFFS+16*2]
+	ldp x6, x7,   [x21, KAGE_LFIPROC_REGS_OFFS+16*3]
+	mov x0, x21   // LFIProc* is first parameter
+	ldr x15, [x22, #KAGE_G2H_CALL_GUARD_FUNC_OFFS]
+	blr x15
+
+	// FIXME: check (return value (x0)) from guard func
+
+	// Call the target function
+	ldp x0, x1,   [x21, KAGE_LFIPROC_REGS_OFFS+16*0]
+	ldp x2, x3,   [x21, KAGE_LFIPROC_REGS_OFFS+16*1]
+	ldp x4, x5,   [x21, KAGE_LFIPROC_REGS_OFFS+16*2]
+	ldp x6, x7,   [x21, KAGE_LFIPROC_REGS_OFFS+16*3]
+	ldr x15, [x22, #KAGE_G2H_CALL_TARGET_FUNC_OFFS]
+	blr x15
+
+	str x0, [x21, KAGE_LFIPROC_REGS_OFFS+16*0] // Save return value
+
+	// Copy arguments back to guest stack
+	ldr   x0, [x21, #KAGE_LFIPROC_REGS_OFFS + 16*15 + 8] // dest: original guest sp
+	mov   x1, sp    // src: current (host) sp
+	// x2 has the size
+	bl    memcpy
+
+	// Cleanup
+	add sp, sp, x20  // Restore the stack
+	mov x0, x21 // LFIProc* into x0 for the return path
+	b  lfi_restore_partial_regs
+	brk #0
 
 
 

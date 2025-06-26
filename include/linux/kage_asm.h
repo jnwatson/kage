@@ -12,12 +12,16 @@
 #define KAGE_LFIPROC_KAGE_OFFS 8
 #define KAGE_LFIPROC_REGS_OFFS 16
 #define KAGE_G2H_CALL_GUARD_FUNC_OFFS 8
+#define KAGE_G2H_CALL_TARGET_FUNC_OFFS 24
 /* == offsetof(struct LFISys, procs) */
 #define KAGE_LFISYS_PROCS_OFFS 2048
 
 /* log2(guest stack) */
 #define KAGE_GUEST_STACK_ORDER 13
 #define KAGE_GUEST_STACK_SIZE (1 << KAGE_GUEST_STACK_ORDER)
+
+#define KAGE_MAX_STACK_ARGS_SIZE 256
+
 
 // Max number of different external functions a guest can call
 #define KAGE_MAX_G2H_CALLS 512
