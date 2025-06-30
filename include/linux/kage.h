@@ -44,39 +44,49 @@ struct kage {
         const char *modname;
 	spinlock_t lock;
 
+	// Lowest address of guest address space
 	unsigned long base;
+
+        // Bitmap of allocated pages in guest
 	unsigned long *alloc_bitmap;
+
+        // The next available location in the guest
 	unsigned long next_open_memory_offs;
+
+        // Run contexts
 	struct LFIProc *procs[KAGE_MAX_PROCS];
+
 	int open_proc_idx;
-	// User-provided runtime call handler.
+	// User-provided runtime call handler.  OBSOLETE
 	SysHandler syshandler;
 
-	// Pointer to the base of the sandbox
 	struct LFISys *sys;
 
-	// Where the instruction sequence to exit from sandbox lives (inside the
-	// sandbox)
+	// Where the instruction sequence to exit from guest lives (inside the
+	// guest)
 	unsigned long exit_addr;
 
 	// Trampolines from guest to host and vice versa
 	unsigned int num_g2h_calls;
+	struct kage_g2h_call *g2h_calls[KAGE_MAX_G2H_CALLS];
 	void * g2h_tramp_text;
 	void * g2h_tramp_data;
 
-	unsigned int num_h2g_calls; // h->g calls
+	unsigned int num_h2g_calls;
 	void * h2g_tramp_text;
 	struct kage_h2g_tramp_data_entry * h2g_tramp_data;
 
 	struct assoc_array closures;
+
+        /* Stores mapping of opaque references to addresses of struct 
+         * pointers */
 	struct kage_objstorage *objstorage;
-	u8 owner_id;
-	struct kage_g2h_call *g2h_calls[KAGE_MAX_G2H_CALLS];
+	u8 owner_id; // Used in objstorage to constrain access to objects
 };
 
 void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type, gfp_t flags);
-void kage_memory_free_all(struct kage *kage);
 void kage_memory_free(struct kage *kage, void *vaddr);
+void kage_memory_free_all(struct kage *kage);
 struct kage *kage_create(const char *modname);
 void kage_destroy(struct kage *kage);
 int kage_post_relocation(struct kage *kage, 
@@ -86,14 +96,10 @@ int kage_post_relocation(struct kage *kage,
                         unsigned int num_syms,
                         const char *strtab);
 
-// Calls a modules's init function from within the sandbox and returns the
-// value returned from fn
-int kage_call_init(struct kage *kage, initcall_t fn);
-
-// Calls any function in the sandbox and returns the result
-uint64_t kage_call(struct kage *kage, void * fn,
-              uint64_t p0, uint64_t p1, uint64_t p2,
-              uint64_t p3, uint64_t p4, uint64_t p5);
+// Calls a function in the guest and returns the result
+unsigned long kage_call(struct kage *kage, void * fn, unsigned long p0, 
+                   unsigned long p1, unsigned long p2, unsigned long p3, 
+                   unsigned long p4, unsigned long p5);
 
 unsigned long kage_symbol_value(struct kage *, const char *name, 
 				unsigned long target_func);

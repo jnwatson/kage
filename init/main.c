@@ -1270,7 +1270,8 @@ int __init_or_module do_one_initcall2(struct kage *kage, initcall_t fn)
 
 	do_trace_initcall_start(fn);
         if (kage) {
-                ret = kage_call_init(kage, fn);
+		ret = kage_call(kage, fn, 0, 0, 0, 0, 0, 0);
+		WARN(ret, "kage_call init failed with %d\n", ret); // DEBUG
         }
         else
         {

@@ -25,13 +25,14 @@ static void proc_validate(struct LFIProc *proc)
 		*r = procaddr(proc->kage->base, *r);
 }
 
-void lfi_proc_init(struct LFIProc *proc, struct kage *kage, uintptr_t entry,
-		   uintptr_t sp, uint32_t idx)
+void lfi_proc_init(struct LFIProc *proc, struct kage *kage, unsigned long entry,
+		   unsigned long sp, u32 idx)
 {
 	proc->kage = kage;
 
+        // FIXME: put this where it can't be stomped
 	sp -= 4;
-	*((uint32_t *)(sp + kage->base)) = idx;
+	*((uint32_t *)sp) = idx;
 	sp -= 12;
 
 	regs_init(&proc->regs, entry, sp);

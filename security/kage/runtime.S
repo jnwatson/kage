@@ -10,8 +10,10 @@
    Find the base of the stack (highest address) and load index into kage->procs
    The stack is 8KiB (0x2000) aligned. We find the top of the 8KiB block
    that SP is in, and then load the 32-bit word from the very top. */
-    // Add the stack size to SP to guarantee we are in the next block
+   /* Add the stack size-1 to SP to guarantee we are in the next block (except
+      if we're already at the top of the stack */
     add   x16, sp, #KAGE_GUEST_STACK_SIZE
+    sub   x16, x16, 1
     // Clear the lower 13 bits to get the base address of the *next* 8KiB block
     and   x16, x16, #~(KAGE_GUEST_STACK_SIZE-1)
     // Load the 32-bit index from the last 4 bytes of the current stack block.
@@ -33,8 +35,12 @@
      * Solution: allocate an extra page when the stack is allocated, and then
      * mark it RO
      */
-    mov   x21, #0
-    brk #0
+	movz x21, #0x7788, lsl #0
+	movk x21, #0x5566, lsl #16
+	movk x21, #0x3344, lsl #32
+	movk x21, #0x1122, lsl #48
+	b 1b
+ 
 2:  // done
 .endm
 
@@ -76,9 +82,11 @@
 .p2align 4
 .globl lfi_ret
 lfi_ret:
+	movz x15, #0xdead, lsl #0
+	movk x15, #0xcafe, lsl #16
 	GET_PROC
 	// restore kernel stack from LFIProc.kstackp
-	ldr x22, [x21]
+	ldr x22, [x21, #KAGE_LFIPROC_KSTACKP_OFFS]
 	mov sp, x22
 	// restore callee-saved registers
 	ldp x29, x30, [sp], 16
@@ -88,6 +96,7 @@ lfi_ret:
 	ldp x21, x22, [sp], 16
 	ldp x19, x20, [sp], 16
 	ldr x18,      [sp], 16
+	mov x15, 0
 	ret
 
 /* This is used for the host to call into the guest from a new run context */
@@ -107,6 +116,8 @@ lfi_asm_invoke:
 	mov x3, sp
 	str x3, [x2]
 	RESTORE_INVOKE_REGS
+	movz x15, #0xdead, lsl #0
+	movk x15, #0xca02, lsl #16
 	br x22
 	brk #0
 
@@ -178,6 +189,7 @@ lfi_restore_regs:
 
 /* This code is repeated in the g2h text region.  Host calls in the
  * guest resolve to an instance of this */
+.p2align 4
 .globl lfi_g2h_trampoline
 lfi_g2h_trampoline:
 	 ldr     x17, . + (KAGE_G2H_TRAMP_REGION_SIZE)
@@ -189,17 +201,21 @@ lfi_g2h_trampoline:
 lfi_g2h_trampoline_end:
 
 /* This code is repeated in h2g text region */
+.p2align 4
 .globl lfi_h2g_trampoline
 lfi_h2g_trampoline:
 	 ldr     x17, . + (KAGE_G2H_TRAMP_REGION_SIZE)
 	 ldr     x18, . + (KAGE_G2H_TRAMP_REGION_SIZE) + 4
-	 b setup_kage_call
+/* This instruction gets patched to branch to lfi_setup_kage_call */
+	 brk     #0 
 	 brk     #0
 
 .globl lfi_h2g_trampoline_end
 lfi_h2g_trampoline_end:
 
-setup_kage_call:
+.p2align 7
+.globl lfi_setup_kage_call
+lfi_setup_kage_call:
 	// Shift two registers to the right for kage * and fn params
 	mov x7, x5
 	mov x6, x4
@@ -209,8 +225,10 @@ setup_kage_call:
 	mov x2, x0
 	mov x1, x18
 	mov x0, x17
-	bl kage_call
-	ret
+	ldr x16, . + (KAGE_G2H_TRAMP_REGION_SIZE) - 32
+	br x16
+.globl lfi_setup_kage_call_end
+lfi_setup_kage_call_end:
 
 /* Precondition: x17 == struct kage_g2h_call *. */
 /* This code is jumped to from lfi_g2h_trampoline */
@@ -255,7 +273,7 @@ lfi_syscall_entry_override:
 	mov x3, x2
 	mov x2, x1
 	mov x1, x0
-	add x0, x21, KAGE_LFIPROC_KAGE_OFFS // Move kage * into first argument
+	mov x0, x21 // Move LFIProc * into first argument
 	ldr x17, [x17, KAGE_G2H_CALL_GUARD_FUNC_OFFS]
 
 	blr x17 // Call guard function
@@ -302,11 +320,8 @@ lfi_syscall_entry_variadic:
 	// Switch to the host stack 
 	mov   sp, x0    // memcpy returns dest in x0
 
-	ldp x0, x1,   [x21, KAGE_LFIPROC_REGS_OFFS+16*0]
-	ldp x2, x3,   [x21, KAGE_LFIPROC_REGS_OFFS+16*1]
-	ldp x4, x5,   [x21, KAGE_LFIPROC_REGS_OFFS+16*2]
-	ldp x6, x7,   [x21, KAGE_LFIPROC_REGS_OFFS+16*3]
-	mov x0, x21   // LFIProc* is first parameter
+	mov x0, x21   // LFIProc* is only parameter
+	mov x1, x22   // kage_g2h_call*
 	ldr x15, [x22, #KAGE_G2H_CALL_GUARD_FUNC_OFFS]
 	blr x15
 
@@ -325,7 +340,7 @@ lfi_syscall_entry_variadic:
 	// Copy arguments back to guest stack
 	ldr   x0, [x21, #KAGE_LFIPROC_REGS_OFFS + 16*15 + 8] // dest: original guest sp
 	mov   x1, sp    // src: current (host) sp
-	// x2 has the size
+        mov   x2, x20   // size
 	bl    memcpy
 
 	// Cleanup

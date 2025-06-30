@@ -242,19 +242,11 @@ static unsigned long guard_kmalloc_generic(struct kage *kage, unsigned long p0,
 	return (unsigned long)kage_memory_alloc(kage, size, MOD_DATA, flags);
 }
 
-static unsigned long guard_kmalloc_trace(struct kage *kage, unsigned long p0,
-					 unsigned long p1, unsigned long p2,
-					 unsigned long p3, unsigned long p4,
-					 unsigned long p5)
+static unsigned long guard_kmalloc_trace(struct LFIProc *proc, 
+					 struct kmem_cache *s, gfp_t flags, 
+					 size_t size)
 {
-	gfp_t flags = (gfp_t)p1;
-	size_t size = (size_t)p2;
-	pr_info("*** %s kage=%px, kmem_cache=%lx, flags=%x size=%lu \n", 
-		__func__, kage, p0, flags, size);
-
-	// We ignore p0 (cache) parameter since we want to use the host's
-
-	return (unsigned long)kmalloc(size, flags);
+	return (unsigned long)kage_memory_alloc(proc->kage, size, MOD_DATA, flags);
 }
 
 static unsigned long
@@ -2529,6 +2521,7 @@ struct h2g_tramp_data_entry {
 	struct kage *kage;
 	u64 guest_func; // callback into guest
 };
+static_assert(sizeof(struct h2g_tramp_data_entry)==KAGE_H2G_TRAMP_SIZE);
 
 // Returns the next slot in the literal pool
 // Note that the kage->lock should be held when calling
@@ -2602,6 +2595,8 @@ static void *get_closure_over(struct kage *kage, unsigned long func)
 	assoc_array_apply_edit(edit);
 finish:
 	rv = (void *)((u64)entry - KAGE_H2G_TRAMP_REGION_SIZE);
+        pr_info("closure_over created at 0x%lx for guest func 0x%lx",
+                (unsigned long)rv, func);
 on_err:
 	spin_unlock_irqrestore(&kage->lock, irq_flags);
 	return rv;
@@ -2654,7 +2649,7 @@ u64 guard_sig(struct LFIProc *proc, struct kage_g2h_call *host_call)
 			void * closure = get_closure_over(proc->kage, val);
 			if (IS_ERR(closure))
 				return PTR_ERR(closure);
-			((u64 *)regs)[regnum] = (u64)closure;
+			((u64 *)regs)[regnum] = (unsigned long)closure;
 			break;
 
 		case 'S': // struct
@@ -2804,7 +2799,6 @@ guard_t *syscall_to_guard[KAGE_SYSCALL_COUNT] = {
 	[KAGE___TASKLET_SCHEDULE] = guard___tasklet_schedule,
 	[KAGE_PRINTK] = guard__printk,
 	[KAGE_KMALLOC_GENERIC] = guard_kmalloc_generic,
-	[KAGE_KMALLOC_TRACE] = guard_kmalloc_trace,
 	[KAGE_ALLOC_CHRDEV_REGION] = guard_alloc_chrdev_region,
 	[KAGE_ALT_CB_PATCH_NOPS] = guard_alt_cb_patch_nops,
 	[KAGE_CDEV_ADD] = guard_cdev_add,

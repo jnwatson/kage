@@ -3,7 +3,6 @@
 
 #include <linux/types.h>
 
-
 typedef struct LFIRegs {
 	uint64_t x0;
 	uint64_t x1;
@@ -42,7 +41,6 @@ typedef struct LFIRegs {
 
 struct LFIProc;
 
-// Warning: update GET_PROC in runtime.S if you change this.
 typedef struct LFISys {
 	uintptr_t rtcalls[256];
 	struct LFIProc *(*procs)[]; /* == &kage->procs */
