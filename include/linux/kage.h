@@ -24,11 +24,6 @@ struct LFIProc; // FIXME: < prepend with kage
 struct LFISys; // prepend with kage
 struct kage;
 
-typedef uint64_t (*SysHandler)(struct kage *kage, uint64_t sysno, uint64_t,
-			       uint64_t, uint64_t, uint64_t, uint64_t,
-			       uint64_t);
-
-
 struct kage_objstorage {
 	void __rcu *objs[KAGE_MAX_OBJ_INDEX + 1];
 	spinlock_t lock;
@@ -57,8 +52,6 @@ struct kage {
 	struct LFIProc *procs[KAGE_MAX_PROCS];
 
 	int open_proc_idx;
-	// User-provided runtime call handler.  OBSOLETE
-	SysHandler syshandler;
 
 	struct LFISys *sys;
 

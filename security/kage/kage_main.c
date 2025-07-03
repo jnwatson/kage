@@ -233,8 +233,6 @@ struct g2h_tramp_data_entry {
 
 static_assert(sizeof(struct g2h_tramp_data_entry)==KAGE_G2H_TRAMP_SIZE);
 
-// tmp
-extern guard_t *syscall_to_guard[KAGE_SYSCALL_COUNT];
 
 /* Returns a b <offs> instruction, a relative jump of offs bytes */
 static u32 make_rel_branch_inst(s32 offs) {
@@ -637,29 +635,6 @@ static struct kage *alloc_kage(void)
 	return kage;
 }
 
-static uint64_t kage_syshandler(struct kage *kage, uint64_t sysno, uint64_t p0,
-				uint64_t p1, uint64_t p2, uint64_t p3,
-				uint64_t p4, uint64_t p5)
-{
-	guard_t *f;
-
-	pr_info("%s syshandler %llu %llx %llx %llx %llx %llx %llx\n",
-		MODULE_NAME, sysno, p0, p1, p2, p3, p4, p5);
-	if (sysno >= KAGE_SYSCALL_COUNT) {
-		pr_warn("%s invalid system call number %lld\n", MODULE_NAME,
-			sysno);
-		return -1;
-	}
-
-	f = syscall_to_guard[sysno];
-	if (!f) {
-		pr_warn("%s invalid system call number %lld\n", MODULE_NAME,
-			sysno);
-		return -1;
-	}
-	return f(kage, p0, p1, p2, p3, p4, p5);
-}
-
 /* Setup the syspage at the lowest address of the guest range */
 static int setup_lfisys(struct kage *kage)
 {
@@ -673,7 +648,6 @@ static int setup_lfisys(struct kage *kage)
 
 	kage->sys = (struct LFISys *)kage->base;
         // FIXME: remove rtcalls
-	//kage->sys->rtcalls[0] = (unsigned long)&lfi_syscall_entry;
 	kage->sys->rtcalls[3] = (unsigned long)&lfi_ret;
 	kage->sys->procs = &kage->procs;
 	return 0;
@@ -842,8 +816,6 @@ struct kage *kage_create(const char *modname)
 	err = kage_init(kage);
 	if (err)
 		goto on_err;
-
-	kage->syshandler = kage_syshandler;
 
 	in_cs = false;
 
