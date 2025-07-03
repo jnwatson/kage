@@ -123,7 +123,8 @@ class SigGen:
           size = paramtype['size']
           encoding = paramtype['encoding']
           # As a hack, treat any u64 param after a func ptr as a pointer
-          if paramtype['kind'] == 'INT' and size == 8 and encoding == '(none)':
+          if (has_func_ptr and paramtype['kind'] == 'INT' and size == 8 and
+              encoding == '(none)'):
             sig.append('P')
           else:
             sig.append(f'I{size}')

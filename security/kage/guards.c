@@ -211,7 +211,7 @@ int guard_sig_precall(struct LFIProc *proc, struct kage_g2h_call *host_call)
 			// Intentional unsigned wrap here
 			if (val && (val - proc->kage->base) >= KAGE_GUEST_SIZE) {
 				pr_err(MODULE_NAME ": invalid argument %d "
-				       "value of %llx in call to%s\n",
+				       "value of 0x%llx in call to %s\n",
 				       regnum + 1, val, host_call->name);
 				return -1;
 			}

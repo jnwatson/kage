@@ -465,8 +465,8 @@ void *kage_obj_get(struct kage *kage, u64 descriptor, u16 type)
 	u16 objindex = kage_unpack_objdescriptor_objindex(descriptor);
 	u16 obj_type = kage_unpack_objdescriptor_type(descriptor);
 	struct kage_objstorage *storage;
-	pr_info("%s: try %llx(%x, %4u(=?%4u), %x)\n", __func__, 
-		descriptor, owner, obj_type, type, objindex);
+	//pr_info("%s: try %llx(%x, %4u(=?%4u), %x)\n", __func__, 
+	//	descriptor, owner, obj_type, type, objindex);
 
 	// Pass-through NULLs; sometimes that's OK
         if (!descriptor)
