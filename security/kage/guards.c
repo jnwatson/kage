@@ -52,6 +52,8 @@
 #include "objdesc.h"
 #include "sigs.h"
 
+// DEBUG
+#pragma clang optimize off
 // FIXME: avoid kmalloc inside of spinlock
 
 /*
@@ -60,6 +62,7 @@
  */
 
 // FIXME: add an identifier to prevent type confusion
+#if 0
 struct kage_tasklet_closure {
 	void (*func)(unsigned long);
 	struct kage *kage;
@@ -77,20 +80,6 @@ static void kage_tasklet_callback(unsigned long data)
 	struct kage_tasklet_closure *closure =
 		(struct kage_tasklet_closure *)data;
 	kage_call(closure->kage, closure->func, closure->data, 0, 0, 0, 0, 0);
-}
-
-static unsigned long get_key_chunk(const void *index_key, int level)
-{
-	return ((unsigned long)index_key >>
-		(level * ASSOC_ARRAY_KEY_CHUNK_SIZE)) &
-	       (ASSOC_ARRAY_KEY_CHUNK_SIZE - 1);
-}
-
-static unsigned long get_object_key_chunk(const void *object, int level)
-{
-	const struct kage_tasklet_closure *closure = object;
-
-	return get_key_chunk(closure->func, level);
 }
 
 static const struct assoc_array_ops kage_closure_ops = {
@@ -240,13 +229,6 @@ static unsigned long guard_kmalloc_generic(struct kage *kage, unsigned long p0,
 	gfp_t flags = (gfp_t)p1;
 
 	return (unsigned long)kage_memory_alloc(kage, size, MOD_DATA, flags);
-}
-
-static unsigned long guard_kmalloc_trace(struct LFIProc *proc, 
-					 struct kmem_cache *s, gfp_t flags, 
-					 size_t size)
-{
-	return (unsigned long)kage_memory_alloc(proc->kage, size, MOD_DATA, flags);
 }
 
 static unsigned long
@@ -2492,6 +2474,14 @@ static unsigned long guard_vsnprintf(struct kage *kage, unsigned long p0,
 
 	return vsnprintf(buf, size, fmt, *args);
 }
+#endif
+
+static unsigned long guard_kmalloc_trace(struct LFIProc *proc, 
+					 struct kmem_cache *s, gfp_t flags, 
+					 size_t size)
+{
+	return (unsigned long)kage_memory_alloc(proc->kage, size, MOD_DATA, flags);
+}
 
 /* Postcondition: *str points to last character of number */
 static u32 eat_num(const char **str) {
@@ -2508,11 +2498,6 @@ static u32 eat_num(const char **str) {
 	if (valid)
 		*str = s - 1;
 	return objidx;
-}
-
-u64 guard_sig_variadic(void) {
-	// FIXME
-	return 0;
 }
 
 /* Resides in h2g_tramp_data; corresponding trampoline precedes this by 
@@ -2534,15 +2519,23 @@ static struct kage_h2g_tramp_data_entry * alloc_h2g_entry(struct kage * kage) {
 
 	return ret;
 }
+
+static unsigned long get_key_chunk(const void * index_key, int level)
+{
+	return ((unsigned long)index_key >>
+		(level * ASSOC_ARRAY_KEY_CHUNK_SIZE)) &
+	       (ASSOC_ARRAY_KEY_CHUNK_SIZE - 1);
+}
+
 static unsigned long get_h2g_key_chunk(const void *object, int level)
 {
 	struct kage_h2g_tramp_data_entry * entry = 
 		  (struct kage_h2g_tramp_data_entry *)object;
 
 	// indexing on the guest_func pointer
-	const void *index_key = (void *)entry->guest_func;
+	const unsigned long index_key = entry->guest_func;
 
-	return get_key_chunk(index_key, level);
+	return get_key_chunk((void *)index_key, level);
 }
 
 static const struct assoc_array_ops kage_h2g_closure_ops = {
@@ -2600,20 +2593,21 @@ finish:
 on_err:
 	spin_unlock_irqrestore(&kage->lock, irq_flags);
 	return rv;
-
-
 }
 
-// Called from lfi_syscall_entry_new
+struct rv_sig {
+	bool rv_is_ptr;
+	bool rv_is_obj;
+	u32 rv_obj_type;
+};
+
+// Called from lfi_syscall_variadic
 /* Guards and calls a host call using just its signature */
-u64 guard_sig(struct LFIProc *proc, struct kage_g2h_call *host_call)
+int guard_sig_precall(struct LFIProc *proc, struct kage_g2h_call *host_call)
 {
 	const char *sig = host_call->sig;
 	LFIRegs *regs = &proc->regs;
 	int regnum = -1;
-	bool rv_is_ptr = false;
-	bool rv_is_obj = false;
-	u32 rv_obj_type;
 	u32 objidx;
 	u64 val = 0;
 	while(sig[0]) {
@@ -2632,10 +2626,8 @@ u64 guard_sig(struct LFIProc *proc, struct kage_g2h_call *host_call)
 			}
 			break;
 		case 'P':// pointer
-			if (regnum < 0) {
-				rv_is_ptr = true;
+			if (regnum < 0)
 				break;
-			}
 			// Intentional unsigned wrap here
 			if (val && (val - proc->kage->base) >= KAGE_GUEST_SIZE) {
 				pr_err(MODULE_NAME ": invalid argument %d "
@@ -2645,6 +2637,12 @@ u64 guard_sig(struct LFIProc *proc, struct kage_g2h_call *host_call)
 			}
 			break;
 		case 'F':// function pointer
+			if (regnum < 0) {
+				pr_err(MODULE_NAME ": %s: unsupported call to "
+				       "kernel function returning pointer to "
+				       "function\n", host_call->name);
+				return -1;
+			}
 			eat_num(&sig);
 			void * closure = get_closure_over(proc->kage, val);
 			if (IS_ERR(closure))
@@ -2661,9 +2659,7 @@ u64 guard_sig(struct LFIProc *proc, struct kage_g2h_call *host_call)
 			       "union not supported\n", host_call->name);
 			return -1;
 		case 'A': // variadic
-			// Should have gone through guard_sig_variadic
-			BUG();
-			return -1;
+			break;
 		case 'B':// oBject/struct
 			objidx = eat_num(&sig);
 			if (!objidx) {
@@ -2671,61 +2667,90 @@ u64 guard_sig(struct LFIProc *proc, struct kage_g2h_call *host_call)
 				       "signature %s\n", host_call->sig);
 				return -1;
 			}
-			if (regnum < 0) {
-				rv_is_obj = true;
-				rv_obj_type = objidx;
+			if (regnum < 0)
 				break;
-			}
 			if (!val) // NULLs are always safe
 				break;
 			// Check to see if a guest local pointer
 			if ((val - proc->kage->base) < KAGE_GUEST_SIZE)
 				break;
 			void * obj = kage_obj_get(proc->kage, val, objidx);
-			if (IS_ERR(obj)) {
+			if (!obj) {
 				pr_err(MODULE_NAME ": invalid struct ptr in "
 				       "arg %d in call to %s\n", 
 				       regnum + 1, host_call->name);
 			}
 			((u64 *)(&proc->regs))[regnum] = (unsigned long)obj;
 			break;
+		default:
+			pr_err(MODULE_NAME ": invalid char in signature '%c' "
+			       "for %s\n", sig[0], host_call->name);
+			return -1;
 		}
 		sig++;
 		regnum++;
 	} // while sig
-	u64 (*host_func)(u64 p0, u64 p1, u64 p2, u64 p3, u64 p4, u64 p5) = 
-			(void *)host_call->host_func;
-	
-	u64 rv = host_func(regs->x0, regs->x1, regs->x2, regs->x3, regs->x4, 
-			   regs->x5);
-	if (rv_is_ptr) {
-		if (rv && (rv - proc->kage->base) >= KAGE_GUEST_SIZE) {
+	return 0;
+}
+
+u64 guard_sig_postcall(struct LFIProc *proc, struct kage_g2h_call *host_call, u64 rv) {
+	const char *sig = host_call->sig;
+	switch (sig[0]) {
+	case 'I':
+	case 'V':
+		break;
+
+	case 'P':
+		if (IS_ERR_OR_NULL((void *)rv))
+			return rv;
+		if ((rv - proc->kage->base) >= KAGE_GUEST_SIZE) {
 			pr_err(MODULE_NAME ": out-of-guest pointer return "
 			       "value of %llx returned in call to%s\n", rv, 
 			       host_call->name);
 			return -1;
 		}
-	}
-	if (rv_is_obj) {
-		if (!rv) {
+		break;
+	case 'B':
+		if (IS_ERR_OR_NULL((void *)rv))
 			return rv;
-		}
-		void *obj = kage_obj_get(proc->kage, rv, rv_obj_type);
+		u32 objidx = eat_num(&sig);
+		void *obj = kage_obj_get(proc->kage, rv, objidx);
 		if (!obj) {
-			u64 rv2 = kage_objstorage_alloc(proc->kage, true, rv_obj_type,
-							(void *)rv);
-			if (!rv) {
+			u64 desc = kage_objstorage_alloc(proc->kage, true,
+							objidx, (void *)rv);
+			if (!desc) {
 				return -1;
 			}
-			return rv2;
+			return desc;
 		}
+		break;
+	default:
+		pr_err(MODULE_NAME ": invalid char in signature '%c' "
+		       "for %s\n", sig[0], host_call->name);
+		return -1;
 	}
+
 	return rv;
+}
+
+// Called from lfi_syscall_entry2
+/* Guards and calls a host call using just its signature */
+u64 guard_sig(struct LFIProc *proc, struct kage_g2h_call *host_call) {
+	LFIRegs *regs = &proc->regs;
+	if (guard_sig_precall(proc, host_call)) {
+		return -EINVAL;
+	}
+	u64 (*host_func)(u64 p0, u64 p1, u64 p2, u64 p3, u64 p4, u64 p5) = 
+			(void *)host_call->host_func;
+	
+	u64 rv = host_func(regs->x0, regs->x1, regs->x2, regs->x3, regs->x4, 
+			   regs->x5);
+	return guard_sig_postcall(proc, host_call, rv);
 }
 
 #define NAME_TO_GUARD_ENTRY(s) {\
 		#s, \
-		(unsigned long)guard_ ## s, \
+		(unsigned long)guard_ ## s, 0, \
 		(unsigned long)lfi_syscall_entry_override, \
 		0, NULL}
 
@@ -2775,14 +2800,18 @@ struct kage_g2h_call *create_g2h_call(const char *name,
 		return call;
 	}
 	call->sig = find_sig(name);
+	if (!call->sig)
+		return ERR_PTR(-ENOKEY);
 
 	if (call->sig[strlen(call->sig)-1] == 'A') {
-		call->guard_func = (unsigned long)guard_sig_variadic;
+		call->guard_func = (unsigned long)guard_sig_precall;
+		call->guard_func2 = (unsigned long)guard_sig_postcall;
 		call->stub = (unsigned long)lfi_syscall_entry_variadic;
 	}
 	else
 	{
 		call->guard_func = (unsigned long)guard_sig;
+		call->guard_func2 = 0;
 		call->stub = (unsigned long)lfi_syscall_entry2;
 	}
 	call->name = name;
@@ -2795,6 +2824,7 @@ struct kage_g2h_call *create_g2h_call(const char *name,
 }
 
 guard_t *syscall_to_guard[KAGE_SYSCALL_COUNT] = {
+#if 0
 	[KAGE_TASKLET_INIT] = guard_tasklet_init,
 	[KAGE___TASKLET_SCHEDULE] = guard___tasklet_schedule,
 	[KAGE_PRINTK] = guard__printk,
@@ -2927,5 +2957,6 @@ guard_t *syscall_to_guard[KAGE_SYSCALL_COUNT] = {
 	[KAGE_TCPM_PUT_PARTNER_SRC_CAPS] = guard_tcpm_put_partner_src_caps,
 #endif
 	[KAGE___WARN_PRINTK] = guard___warn_printk,
+#endif
 };
 

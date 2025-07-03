@@ -35,10 +35,6 @@
      * Solution: allocate an extra page when the stack is allocated, and then
      * mark it RO
      */
-	movz x21, #0x7788, lsl #0
-	movk x21, #0x5566, lsl #16
-	movk x21, #0x3344, lsl #32
-	movk x21, #0x1122, lsl #48
 	b 1b
  
 2:  // done
@@ -82,8 +78,6 @@
 .p2align 4
 .globl lfi_ret
 lfi_ret:
-	movz x15, #0xdead, lsl #0
-	movk x15, #0xcafe, lsl #16
 	GET_PROC
 	// restore kernel stack from LFIProc.kstackp
 	ldr x22, [x21, #KAGE_LFIPROC_KSTACKP_OFFS]
@@ -114,26 +108,9 @@ lfi_asm_invoke:
 	// save stack to kstackp
 	mov x22, x1
 	mov x3, sp
-	str x3, [x2]
+	str x3, [x2] //*3rd param = $sp
 	RESTORE_INVOKE_REGS
-	movz x15, #0xdead, lsl #0
-	movk x15, #0xca02, lsl #16
 	br x22
-	brk #0
-
-/* FIXME: obsolete */
-/* This code is jumped-to when a guest calls a host kernel function.
- * Its address is stored in the syspage's rtcalls. */
-.globl lfi_syscall_entry
-lfi_syscall_entry:
-	SAVE_PARTIAL_REGS
-	// x21 now contains Proc*
-	ldr x1, [x21]         // restore host sp
-	mov sp, x1
-	mov x0, x21     // pass LFIProc * as first parameter
-	bl lfi_syscall_handler
-	mov x0, x21
-	b  lfi_restore_partial_regs
 	brk #0
 
 // Restore only caller-saved registers.
@@ -207,12 +184,14 @@ lfi_h2g_trampoline:
 	 ldr     x17, . + (KAGE_G2H_TRAMP_REGION_SIZE)
 	 ldr     x18, . + (KAGE_G2H_TRAMP_REGION_SIZE) + 4
 /* This instruction gets patched to branch to lfi_setup_kage_call */
-	 brk     #0 
+	 brk     #0
 	 brk     #0
 
 .globl lfi_h2g_trampoline_end
 lfi_h2g_trampoline_end:
 
+
+// Used by the kernel to call callbacks registered by the guest
 .p2align 7
 .globl lfi_setup_kage_call
 lfi_setup_kage_call:
@@ -287,6 +266,11 @@ lfi_syscall_entry_override:
 .globl lfi_syscall_entry_variadic
 lfi_syscall_entry_variadic:
 	SAVE_PARTIAL_REGS
+	// FIXME: would be slightly more optimal to group two of these, e.g.
+	// x20 -> x23
+	str x19,      [x21, KAGE_LFIPROC_REGS_OFFS+16*9+8]
+	str x20,      [x21, KAGE_LFIPROC_REGS_OFFS+16*10]
+	str x22,      [x21, KAGE_LFIPROC_REGS_OFFS+16*11]
 	// x21 now contains LFIProc*
 	// x1 still contains guest sp
 
@@ -320,21 +304,30 @@ lfi_syscall_entry_variadic:
 	// Switch to the host stack 
 	mov   sp, x0    // memcpy returns dest in x0
 
-	mov x0, x21   // LFIProc* is only parameter
-	mov x1, x22   // kage_g2h_call*
+	// Call guard func 1 (guard_sig_precall)
+	mov x0, x21   // LFIProc* is 1st parameter
+	mov x1, x22   // kage_g2h_call* is 2nd parameter
 	ldr x15, [x22, #KAGE_G2H_CALL_GUARD_FUNC_OFFS]
 	blr x15
+	cmp x0, #0
+	b.ne 0f   // don't call host function if guard fails
 
-	// FIXME: check (return value (x0)) from guard func
-
-	// Call the target function
+	// Call the host function
 	ldp x0, x1,   [x21, KAGE_LFIPROC_REGS_OFFS+16*0]
 	ldp x2, x3,   [x21, KAGE_LFIPROC_REGS_OFFS+16*1]
 	ldp x4, x5,   [x21, KAGE_LFIPROC_REGS_OFFS+16*2]
 	ldp x6, x7,   [x21, KAGE_LFIPROC_REGS_OFFS+16*3]
-	ldr x15, [x22, #KAGE_G2H_CALL_TARGET_FUNC_OFFS]
+	ldr x15, [x22, #KAGE_G2H_CALL_HOST_FUNC_OFFS]
 	blr x15
 
+	// Call guard func 2 (guard_sig_postcall)
+	mov x2, x0
+	mov x0, x21
+	mov x1, x22
+	ldr x15, [x22, #KAGE_G2H_CALL_GUARD_FUNC2_OFFS]
+	bl guard_sig_postcall
+
+	0: 
 	str x0, [x21, KAGE_LFIPROC_REGS_OFFS+16*0] // Save return value
 
 	// Copy arguments back to guest stack
@@ -346,6 +339,9 @@ lfi_syscall_entry_variadic:
 	// Cleanup
 	add sp, sp, x20  // Restore the stack
 	mov x0, x21 // LFIProc* into x0 for the return path
+	ldr x19,      [x0, KAGE_LFIPROC_REGS_OFFS+16*9+8]
+	ldr x20,      [x0, KAGE_LFIPROC_REGS_OFFS+16*10]
+	ldr x22,      [x0, KAGE_LFIPROC_REGS_OFFS+16*11]
 	b  lfi_restore_partial_regs
 	brk #0
 

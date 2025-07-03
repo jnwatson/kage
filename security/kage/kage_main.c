@@ -25,6 +25,9 @@
 #include "guards.h"
 #include "objdesc.h"
 
+// DEBUG
+#pragma clang optimize off
+
 static_assert(offsetof(struct LFIProc, kstackp) == KAGE_LFIPROC_KSTACKP_OFFS,
 	      "Inconsistency among proc.h and kage_asm.h");
 static_assert(offsetof(struct LFIProc, kage) == KAGE_LFIPROC_KAGE_OFFS,
@@ -36,6 +39,13 @@ static_assert(offsetof(struct LFISys, procs) == KAGE_LFISYS_PROCS_OFFS,
 static_assert(offsetof(struct kage_g2h_call, guard_func) ==
 			KAGE_G2H_CALL_GUARD_FUNC_OFFS,
 	      "Inconsistency among guards.h and kage_asm.h");
+static_assert(offsetof(struct kage_g2h_call, guard_func2) ==
+			KAGE_G2H_CALL_GUARD_FUNC2_OFFS,
+	      "Inconsistency among guards.h and kage_asm.h");
+static_assert(offsetof(struct kage_g2h_call, host_func) ==
+			KAGE_G2H_CALL_HOST_FUNC_OFFS,
+	      "Inconsistency among guards.h and kage_asm.h");
+static_assert(KAGE_GUEST_STACK_ORDER <= THREAD_SIZE_ORDER + PAGE_SHIFT);
 
 #define VM_AREA_SIZE (64UL * 1024 * 1024 * 1024)
 #define MAX_GUESTS (VM_AREA_SIZE / KAGE_GUEST_SIZE - 1)
@@ -136,7 +146,7 @@ free_pages:
 cleanup:
 	if (do_lock)
 		spin_unlock_irqrestore(&kage->lock, irq_flags);
-	pr_info("kmae 0x%lx - 0x%lx, page=%px\n", start, end, vmalloc_to_page((void *)start));
+	//pr_info("kmae 0x%lx - 0x%lx, page=%px\n", start, end, vmalloc_to_page((void *)start));
 	kfree(tmp_pages);
 	return ret;
 }
@@ -451,30 +461,38 @@ static int kage_objstorage_init(struct kage_objstorage **storage_ptr)
 	return 0;
 }
 
-void *kage_obj_get(struct kage *kage, u64 descriptor,
-		   enum kage_objdescriptor_type type)
+void *kage_obj_get(struct kage *kage, u64 descriptor, u16 type)
 {
 	u8 owner = kage_unpack_objdescriptor_owner(descriptor);
 	u16 objindex = kage_unpack_objdescriptor_objindex(descriptor);
-	u8 obj_type = kage_unpack_objdescriptor_type(descriptor);
+	u16 obj_type = kage_unpack_objdescriptor_type(descriptor);
 	struct kage_objstorage *storage;
+	pr_info("%s: try %llx(%x, %4u(=?%4u), %x)\n", __func__, 
+		descriptor, owner, obj_type, type, objindex);
 
 	// Pass-through NULLs; sometimes that's OK
         if (!descriptor)
 		return 0;
 
+	if (!is_kage_objdescriptor(descriptor)) 
+		return NULL;
+
 	if (objindex > KAGE_MAX_OBJ_INDEX)
-		return ERR_PTR(-EINVAL);
+		return NULL;
 
 	if (obj_type != type)
-		return ERR_PTR(-EINVAL);
+		return NULL;
 
 	if (owner == KAGE_OWNER_GLOBAL)
 		storage = kage_global_objstorage;
 	else
 		storage = kage->objstorage;
 
-	return rcu_dereference(storage->objs[objindex]);
+	void * rv = rcu_dereference(storage->objs[objindex]);
+	pr_info("%s: %llx(%x, %4u, %x) -> 0x%px\n", __func__, 
+		descriptor, owner, obj_type, objindex, rv);
+
+	return rv;
 }
 
 void kage_obj_set(struct kage *kage, u64 descriptor, void *obj)
@@ -491,6 +509,9 @@ void kage_obj_set(struct kage *kage, u64 descriptor, void *obj)
 		storage = kage->objstorage;
 
 	rcu_assign_pointer(storage->objs[objindex], obj);
+	u16 obj_type = kage_unpack_objdescriptor_type(descriptor);
+	pr_info("%s: %llx(%x, %4u, %x) -> 0x%px\n", __func__, 
+		descriptor, owner, obj_type, objindex, obj);
 }
 
 void kage_obj_delete(struct kage *kage, u64 descriptor)
@@ -499,7 +520,7 @@ void kage_obj_delete(struct kage *kage, u64 descriptor)
 }
 
 u64 kage_objstorage_alloc(struct kage *kage, bool is_global,
-			  enum kage_objdescriptor_type type,
+			  u16 type,
 			  void * obj)
 {
 	struct kage_objstorage *storage;
@@ -524,7 +545,7 @@ u64 kage_objstorage_alloc(struct kage *kage, bool is_global,
 		if (!rcu_dereference_protected(storage->objs[slot],
 					       lockdep_is_held(&storage->lock))) {
 			storage->next_slot = slot + 1;
-			u64 desc = kage_pack_objdescriptor(type, owner, slot);
+			u64 desc = kage_pack_objdescriptor(type, is_global, slot);
 			kage_obj_set(kage, desc, obj);
 			ret = desc;
 			break;
@@ -652,7 +673,7 @@ static int setup_lfisys(struct kage *kage)
 
 	kage->sys = (struct LFISys *)kage->base;
         // FIXME: remove rtcalls
-	kage->sys->rtcalls[0] = (unsigned long)&lfi_syscall_entry;
+	//kage->sys->rtcalls[0] = (unsigned long)&lfi_syscall_entry;
 	kage->sys->rtcalls[3] = (unsigned long)&lfi_ret;
 	kage->sys->procs = &kage->procs;
 	return 0;
@@ -756,7 +777,6 @@ static int protect_trampolines(struct kage *kage)
 	};
 
 	for (int i=0; i<ARRAY_SIZE(parms); i++) {
-		pr_info("setting x on 0x%lx - 0x%lx\n", parms[i].text, parms[i].text + parms[i].size);
 		err = set_memory_x(parms[i].text, parms[i].size >> PAGE_SHIFT);
 		if (err) {
 			pr_err(MODULE_NAME ": Failed to set trampoline text "
@@ -884,26 +904,28 @@ unsigned long kage_call(struct kage *kage, void * fn,
 	struct LFIProc *lfiproc;
 
         // FIXME: check fn range
+	if (((unsigned long)fn - kage->base) >= KAGE_GUEST_SIZE) {
+		pr_err(MODULE_NAME " %s: call outside of guest range\n", 
+		       __func__);
+		return -1;
+	}
 
-        /* Strictly, we only need STACK_SIZE alignment for our top-of-stack
-         * calculation in runtime.S to work.  But we need 1<<THREAD_SHIFT
-         * alignment to prevent the stack overflow checks in
-         * arch/arm64/kernel.entry.S to think we've accidentally blown our
-         * stack. */
-        size_t const stack_alignment = 16384;
+
 	guest_stack = kage_memory_alloc_aligned(kage,
-						      KAGE_GUEST_STACK_SIZE,
-						      MOD_DATA, GFP_KERNEL,
-						      stack_alignment);
+						KAGE_GUEST_STACK_SIZE,
+						MOD_DATA, GFP_KERNEL,
+						THREAD_ALIGN);
 	if (!guest_stack) {
-		pr_err(MODULE_NAME " kage_call: Failed to allocate guest stack\n");
+		pr_err(MODULE_NAME " %s: Failed to allocate guest stack\n", 
+		       __func__);
 		return -1;
 	}
 
 	lfiproc = alloc_lfiproc(kage, &lfi_idx);
-	pr_info(MODULE_NAME " kage_call allocated LFIProc slot %d\n", lfi_idx);
+	pr_info(MODULE_NAME " %s allocated LFIProc slot %d\n", __func__, lfi_idx);
 	if (!lfiproc) {
-		pr_err(MODULE_NAME " kage_call: Failure to allocate LFI context\n");
+		pr_err(MODULE_NAME " %s: Failure to allocate LFI context\n", 
+		       __func__);
 		kage_memory_free(kage, guest_stack);
 		return -1;
 	}
@@ -917,7 +939,7 @@ unsigned long kage_call(struct kage *kage, void * fn,
 	// pr_info("%s id=%d, fn=0x%lx, ret=0x%lx\n", __func__, lfi_idx, 
 	// 	(unsigned long)fn, kage->exit_addr);
 	u32 *inst = fn;
-	inst = (u32 *)kage->exit_addr;
+inst = (u32 *)kage->exit_addr;
 	rv = lfi_proc_invoke(lfiproc, fn, (void *)(kage->exit_addr),
 			     p0, p1, p2, p3, p4, p5);
 

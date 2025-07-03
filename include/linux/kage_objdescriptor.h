@@ -11,8 +11,8 @@
  * | Bits   | Content      | Description                                |
  * |--------|--------------|--------------------------------------------|
  * | 63-33  | Tag          | High bits to make it a non-canonical value.|
- * | 32-25  | type (8)     | The type of the object.                    |
- * | 24-17  | owner (8)    | The owner of the object.                   |
+ * | 32     | owner (1)    | The owner of the object (1=global, 0=local)|
+ * | 31-17  | type (15)    | The type of the object.                    |
  * | 16-1   | objindex (16)| The index of the object.                   |
  * | 0      | flag (1)     | Must be 1 to indicate an objdescriptor.    |
  */
@@ -25,15 +25,7 @@
 // The flag in the LSB to identify an object descriptor.
 #define KAGE_OBJDESC_FLAG 1ULL
 
-#define KAGE_OWNER_GLOBAL 0xffU
-
-enum kage_objdescriptor_type {
-	KAGE_ODTYPE_WORKQUEUE = 1,
-	KAGE_ODTYPE_CLASS,
-	KAGE_ODTYPE_DEVICE,
-	KAGE_ODTYPE_WAKEUPSOURCE
-};
-
+#define KAGE_OWNER_GLOBAL 1U
 
 /**
  * is_kage_objdescriptor - Check if a value is a valid kage object descriptor.
@@ -47,7 +39,7 @@ enum kage_objdescriptor_type {
  */
 static inline bool is_kage_objdescriptor(u64 val)
 {
-  bool is_in_range = (val > KAGE_OBJDESC_BASE);
+  bool is_in_range = (val & KAGE_OBJDESC_BASE) == KAGE_OBJDESC_BASE;
 
   bool has_flag = ((val & KAGE_OBJDESC_FLAG) != 0);
 
@@ -56,39 +48,38 @@ static inline bool is_kage_objdescriptor(u64 val)
 
 /**
  * kage_pack_objdescriptor - Creates an object descriptor from its components.
- * @type: An 8-bit type value.
- * @owner: An 8-bit owner value.
+ * @type: An 15-bit type value.
+ * @owner: An 1-bit owner value.
  * @objindex: A 16-bit object index.
  *
  * Returns: A 64-bit object descriptor value.
  */
-#define kage_pack_objdescriptor(type, owner, objindex) \
+#define kage_pack_objdescriptor(_type, _owner, _objindex) \
   (KAGE_OBJDESC_BASE | \
-   ((u64)(type) << 25) | \
-   ((u64)(owner) << 17) | \
-   ((u64)(objindex) << 1) | \
+   ((u64)(_owner) << 32) | \
+   ((u64)(_type) << 17) | \
+   ((u64)(_objindex) << 1) | \
    KAGE_OBJDESC_FLAG)
-
 /**
  * kage_unpack_objdescriptor_type - Extracts the 'type' field from an object descriptor.
  * @val: A 64-bit object descriptor.
  *
- * Returns: The 8-bit type value.
+ * Returns: The 15-bit type value.
  */
-static inline u8 kage_unpack_objdescriptor_type(u64 val)
+static inline u16 kage_unpack_objdescriptor_type(u64 val)
 {
-  return (val >> 25) & 0xFF;
+  return (val >> 17) & 0x7FFF;
 }
 
 /**
  * kage_unpack_objdescriptor_owner - Extracts the 'owner' field from an object descriptor.
  * @val: A 64-bit object descriptor.
  *
- * Returns: The 8-bit owner value.
+ * Returns: The 1-bit owner value.
  */
 static inline u8 kage_unpack_objdescriptor_owner(u64 val)
 {
-  return (val >> 17) & 0xFF;
+  return (val >> 32) & 0x1;
 }
 
 /**

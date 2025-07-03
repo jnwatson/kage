@@ -1,7 +1,6 @@
 #ifndef _KAGE_RUNTIME_H_
 #define _KAGE_RUNTIME_H_
 
-extern void lfi_syscall_entry(void);
 extern void lfi_syscall_entry2(void);
 extern void lfi_syscall_entry_override(void);
 extern void lfi_syscall_entry_variadic(void);
