@@ -2,32 +2,11 @@
 #ifndef _KAGE_ARM64_H
 #define _KAGE_ARM64_H
 
-#include <linux/types.h>
-#include <linux/bug.h>
 #include "proc.h"
 
-static void wr_regs_base(LFIRegs *regs, uint64_t val)
-{
-	regs->x27 = val;
-}
-
-static uint64_t *regs_addr(LFIRegs *regs, int n)
-{
-	switch (n) {
-	case 0:
-		return &regs->x28;
-	case 1:
-		return &regs->sp;
-	case 2:
-		return &regs->x30;
-	}
-	return NULL;
-}
-
-static void regs_init(LFIRegs *regs, uint64_t entry, uint64_t sp)
-{
-	regs->x30 = entry;
-	regs->sp = sp;
-}
+void wr_regs_base(LFIRegs *regs, uint64_t val);
+uint64_t *regs_addr(LFIRegs *regs, int n);
+void regs_init(LFIRegs *regs, uint64_t entry, uint64_t sp);
+uint64_t *lfi_regs_arg(LFIRegs *regs, int arg);
 
 #endif /* _KAGE_ARM64_H */

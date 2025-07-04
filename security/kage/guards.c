@@ -50,6 +50,7 @@
 #include "proc.h"
 #include "guards.h"
 #include "objdesc.h"
+#include "arm64.h"
 #include "sigs.h"
 
 // DEBUG
@@ -192,7 +193,7 @@ int guard_sig_precall(struct LFIProc *proc, struct kage_g2h_call *host_call)
 	u64 val = 0;
 	while(sig[0]) {
 		if (regnum >= 0)
-			val = ((u64 *)regs)[regnum];
+			val = *lfi_regs_arg(regs, regnum);
 		switch (sig[0]){
 		case 'I': // integer/enum/const
 			eat_num(&sig);
@@ -323,8 +324,8 @@ u64 guard_sig(struct LFIProc *proc, struct kage_g2h_call *host_call) {
 	u64 (*host_func)(u64 p0, u64 p1, u64 p2, u64 p3, u64 p4, u64 p5) = 
 			(void *)host_call->host_func;
 	
-	u64 rv = host_func(regs->x0, regs->x1, regs->x2, regs->x3, regs->x4, 
-			   regs->x5);
+	u64 rv = host_func(regs->x[0], regs->x[1], regs->x[2], regs->x[3], 
+			   regs->x[4], regs->x[5]);
 	return guard_sig_postcall(proc, host_call, rv);
 }
 

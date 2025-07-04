@@ -6,45 +6,31 @@
 
 uint64_t *lfi_regs_arg(LFIRegs *regs, int arg)
 {
-	switch (arg) {
+	BUG_ON(arg>=8);
+	return &regs->x[arg];
+}
+
+void wr_regs_base(LFIRegs *regs, uint64_t val)
+{
+	regs->x[27] = val;
+}
+
+uint64_t *regs_addr(LFIRegs *regs, int n)
+{
+	switch (n) {
 	case 0:
-		return &regs->x0;
+		return &regs->x[28];
 	case 1:
-		return &regs->x1;
+		return &regs->sp;
 	case 2:
-		return &regs->x2;
-	case 3:
-		return &regs->x3;
-	case 4:
-		return &regs->x4;
-	case 5:
-		return &regs->x5;
+		return &regs->x[30];
 	}
-	BUG_ON(1);
+	return NULL;
 }
 
-uint64_t *lfi_regs_ret(LFIRegs *regs)
+void regs_init(LFIRegs *regs, uint64_t entry, uint64_t sp)
 {
-	return &regs->x0;
+	regs->x[30] = entry;
+	regs->sp = sp;
 }
 
-
-uint64_t *lfi_regs_sysarg(LFIRegs *regs, int arg)
-{
-	return lfi_regs_arg(regs, arg);
-}
-
-uint64_t *lfi_regs_sysret(LFIRegs *regs)
-{
-	return &regs->x0;
-}
-
-uint64_t *lfi_regs_gas(LFIRegs *regs)
-{
-	return &regs->x23;
-}
-
-uint64_t *lfi_regs_mask(LFIRegs *regs)
-{
-	return &regs->x24;
-}
