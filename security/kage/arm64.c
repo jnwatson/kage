@@ -28,10 +28,6 @@ uint64_t *lfi_regs_ret(LFIRegs *regs)
 	return &regs->x0;
 }
 
-uint64_t *lfi_regs_sysno(LFIRegs *regs)
-{
-	return &regs->x9;
-}
 
 uint64_t *lfi_regs_sysarg(LFIRegs *regs, int arg)
 {

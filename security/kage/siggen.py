@@ -111,8 +111,6 @@ class SigGen:
     sig = []
     print(f'\t{{"{func['name']}", "', end='')
     has_func_ptr = False
-    # if func['name']=='_printk':
-    #   import ipdb; ipdb.set_trace()
     proto = self.all_types[func['type_id']]
     rv = self.all_types[proto['ret_type_id']]
     params = proto['params']

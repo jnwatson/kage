@@ -44,6 +44,7 @@ uint64_t lfi_proc_invoke(struct LFIProc *proc, void *fn, void *ret,
                          uint64_t p0, uint64_t p1, uint64_t p2, 
                          uint64_t p3, uint64_t p4, uint64_t p5)
 {
+	// FIXME: turn regs into array
 	*lfi_regs_sysarg(&proc->regs, 0) = p0;
 	*lfi_regs_sysarg(&proc->regs, 1) = p1;
 	*lfi_regs_sysarg(&proc->regs, 2) = p2;

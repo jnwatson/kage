@@ -62,14 +62,9 @@ uint64_t lfi_proc_start(struct LFIProc *proc);
 
 void lfi_proc_free(struct LFIProc *proc);
 
-// lfi_regs_sysno returns the register used for the system call number.
-uint64_t *lfi_regs_sysno(LFIRegs *regs);
 
 // lfi_regs_sysarg returns the nth system call argument (0-5).
 uint64_t *lfi_regs_sysarg(LFIRegs *regs, int n);
-
-// lfi_regs_sysret returns the register used for system call return values.
-uint64_t *lfi_regs_sysret(LFIRegs *regs);
 
 uint64_t lfi_proc_invoke(struct LFIProc *proc, void *fn, void *ret,
                          uint64_t p0, uint64_t p1, uint64_t p2,

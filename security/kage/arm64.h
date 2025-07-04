@@ -8,14 +8,14 @@
 
 static void wr_regs_base(LFIRegs *regs, uint64_t val)
 {
-	regs->x21 = val;
+	regs->x27 = val;
 }
 
 static uint64_t *regs_addr(LFIRegs *regs, int n)
 {
 	switch (n) {
 	case 0:
-		return &regs->x18;
+		return &regs->x28;
 	case 1:
 		return &regs->sp;
 	case 2:
