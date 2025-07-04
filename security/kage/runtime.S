@@ -106,7 +106,7 @@ lfi_asm_invoke:
 	stp x27, x28, [sp, #-16]!
 	stp x29, x30, [sp, #-16]!
 	// save stack to kstackp
-	mov x22, x1 // FIXME: use x16 or x4
+	mov x22, x1
 	mov x3, sp
 	str x3, [x2] //*3rd param = $sp
 	RESTORE_INVOKE_REGS
@@ -216,18 +216,15 @@ lfi_syscall_entry2:
 	SAVE_PARTIAL_REGS
 	// struct LFIProc *proc == x27 now
 	// sp = proc->kstackp
-	ldr x16, [x27]
+	ldr x16, [x27, KAGE_LFIPROC_KSTACKP_OFFS]
 	mov sp, x16
-	// FIXME: unnecessary: callee save
-	str x27, [sp, #-16]! // save proc for after call
 	mov x0, x27 // 1st arg: proc ptr
 	mov x1, x17 // 2nd arg: kage_g2h_call ptr
 	ldr x17, [x17, KAGE_G2H_CALL_GUARD_FUNC_OFFS]
 	blr x17 // Call guard function
-	ldr x17, [sp], 16  // restore proc
 	// proc->regs[0] = return value from guard func
-	str x0, [x17, KAGE_LFIPROC_REGS_OFFS+16*0]
-	mov x0, x17 // x0 = proc
+	str x0, [x27, KAGE_LFIPROC_REG_X_OFFS(0)]
+	mov x0, x27 // x0 = proc
 	b  lfi_restore_partial_regs // head back to guest
 	brk #0
 
@@ -241,7 +238,7 @@ lfi_syscall_entry_override:
 	// struct LFIProc *proc == x27 now
 
 	// sp = proc->kstackp
-	ldr x16, [x27]
+	ldr x16, [x27, KAGE_LFIPROC_KSTACKP_OFFS]
 	mov sp, x16
 
 	/* Shift the argument registers to the right so kage param is first */
