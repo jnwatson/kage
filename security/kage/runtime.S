@@ -168,10 +168,10 @@ lfi_restore_regs:
  * guest resolve to an instance of this */
 .p2align 4
 .globl lfi_g2h_trampoline
-lfi_g2h_trampoline: // FIXME: don't use x18
+lfi_g2h_trampoline:
 	 ldr     x17, . + (KAGE_G2H_TRAMP_REGION_SIZE)
-	 ldr     x18, . + (KAGE_G2H_TRAMP_REGION_SIZE) + 4
-	 br      x18
+	 ldr     x16, . + (KAGE_G2H_TRAMP_REGION_SIZE) + 4
+	 br      x16
 	 brk     #0
 
 .globl lfi_g2h_trampoline_end
@@ -180,9 +180,9 @@ lfi_g2h_trampoline_end:
 /* This code is repeated in h2g text region */
 .p2align 4
 .globl lfi_h2g_trampoline
-lfi_h2g_trampoline: // FIXME: don't use x18
+lfi_h2g_trampoline:
 	 ldr     x17, . + (KAGE_G2H_TRAMP_REGION_SIZE)
-	 ldr     x18, . + (KAGE_G2H_TRAMP_REGION_SIZE) + 4
+	 ldr     x16, . + (KAGE_G2H_TRAMP_REGION_SIZE) + 4
 /* This instruction gets patched to branch to lfi_setup_kage_call */
 	 brk     #0
 	 brk     #0
@@ -202,7 +202,7 @@ lfi_setup_kage_call:
 	mov x4, x2
 	mov x3, x1
 	mov x2, x0
-	mov x1, x18
+	mov x1, x16
 	mov x0, x17
 	ldr x16, . + (KAGE_G2H_TRAMP_REGION_SIZE) - 32
 	br x16
