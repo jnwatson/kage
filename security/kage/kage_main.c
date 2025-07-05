@@ -50,6 +50,7 @@ static_assert(offsetof(struct kage_g2h_call, host_func) ==
 	      "Inconsistency among guards.h and kage_asm.h");
 static_assert(KAGE_GUEST_STACK_ORDER <= THREAD_SIZE_ORDER + PAGE_SHIFT);
 
+// Size of the space reserved for *all* guests
 #define VM_AREA_SIZE (64UL * 1024 * 1024 * 1024)
 #define MAX_GUESTS (VM_AREA_SIZE / KAGE_GUEST_SIZE - 1)
 
@@ -201,8 +202,8 @@ static int alloc_trampolines(struct kage *kage)
 	kage->h2g_tramp_text = kage->h2g_tramp_data = NULL;
 
 	kage->g2h_tramp_text =
-		kage_memory_alloc(kage, 2 * KAGE_G2H_TRAMP_REGION_SIZE, MOD_TEXT,
-				  GFP_KERNEL);
+		kage_memory_alloc(kage, 2 * KAGE_G2H_TRAMP_REGION_SIZE,
+				  MOD_TEXT, GFP_KERNEL);
 	if (!kage->g2h_tramp_text)
 		goto on_err;
 
@@ -216,8 +217,10 @@ static int alloc_trampolines(struct kage *kage)
 	kage->h2g_tramp_data = (void *)((unsigned long)kage->h2g_tramp_text +
 			KAGE_H2G_TRAMP_REGION_SIZE);
 
-	pr_info("g2h trampoline text=%llx, data=%llx\n", (u64)kage->g2h_tramp_text,
-		(u64)kage->g2h_tramp_data);
+	pr_info("g2h trampoline text=0x%px, data=0x%px\n", kage->g2h_tramp_text,
+		kage->g2h_tramp_data);
+	pr_info("h2g trampoline text=0x%px, data=0x%px\n", kage->h2g_tramp_text,
+		kage->h2g_tramp_data);
 
 	return 0;
 
@@ -252,23 +255,35 @@ static void fill_trampolines(struct kage *kage)
 {
 	unsigned int i;
 	unsigned long tramp_loc = (unsigned long)kage->g2h_tramp_text;
+
+	// Copy in the G2H trampolines (into guest memory)
 	for (i=0; i<kage->num_g2h_calls; i++) {
 		memcpy((void *)tramp_loc, &lfi_g2h_trampoline, KAGE_G2H_TRAMP_SIZE);
 		tramp_loc += KAGE_G2H_TRAMP_SIZE;
 	}
+
+	// Copy in do_ret
+	kage->exit_addr = tramp_loc;
+	memcpy((void *)tramp_loc, &do_ret, KAGE_DO_RET_SIZE);
+	tramp_loc += KAGE_DO_RET_SIZE;
+
+	// Zero the rest
 	size_t left = (unsigned long)kage->g2h_tramp_text + KAGE_G2H_TRAMP_REGION_SIZE - tramp_loc;
 	memset((void *)tramp_loc, 0, left);
 
+	// Copy in the G2H trampoline literal pool
 	struct g2h_tramp_data_entry* entry = kage->g2h_tramp_data;
 	for (i=0; i<kage->num_g2h_calls; i++) {
 		struct kage_g2h_call * host_call = kage->g2h_calls[i];
 		entry[i].call = host_call;
 		entry[i].trampoline = host_call->stub;
 	}
-	left = (unsigned long)kage->g2h_tramp_data + KAGE_G2H_TRAMP_REGION_SIZE -
-			(unsigned long)(&entry[i]);
+	left = (unsigned long)kage->g2h_tramp_data + KAGE_G2H_TRAMP_REGION_SIZE
+			- (unsigned long)(&entry[i]);
 	memset(&entry[i], 0, left);
 
+	/* Copy in the H2G trampolines (in host memory).  The literal pool
+	 * gets filled in later dynamically */
 	tramp_loc = (unsigned long)kage->h2g_tramp_text;
 	for (i=0; i<KAGE_MAX_H2G_CALLS; i++) {
 		memcpy((void *)tramp_loc, &lfi_h2g_trampoline, KAGE_H2G_TRAMP_SIZE);
@@ -286,7 +301,7 @@ static void fill_trampolines(struct kage *kage)
 	memcpy((void *)tramp_loc, &lfi_setup_kage_call, 
 	       KAGE_SETUP_KAGE_CALL_SIZE);
 
-	// Setup its literal pool
+	// Fill lfi_setup_kage_call literal pool
 	*(unsigned long *)(tramp_loc + KAGE_H2G_TRAMP_REGION_SIZE) = 
 			(unsigned long)kage_call;
 
@@ -569,6 +584,8 @@ static void do_linktime_assertions(void)
 	BUG_ON((unsigned long)&lfi_setup_kage_call_end -
 	       (unsigned long)&lfi_setup_kage_call != 
 		KAGE_SETUP_KAGE_CALL_SIZE);
+	BUG_ON((unsigned long)&do_ret_end - (unsigned long)&do_ret != 
+		KAGE_DO_RET_SIZE);
 }
 
 static int __init kagemodule_init(void)
@@ -586,6 +603,8 @@ static int __init kagemodule_init(void)
 
 	spin_lock_init(&module_lock);
 
+	// TODO:  if an aligned version of this is exported, we could allocate
+	// on demand
 	/* Allocate VM area */
 	vm_area = get_vm_area(VM_AREA_SIZE, VM_ALLOC);
 	if (!vm_area)
@@ -656,6 +675,8 @@ static int setup_lfisys(struct kage *kage)
 	return 0;
 }
 
+// Don't need this right now
+#if 0
 static unsigned long find_symbol_address(const struct kage * kage,
 					 const Elf_Shdr *sechdrs,
                                          unsigned int shnum,
@@ -707,6 +728,7 @@ static unsigned long find_symbol_address(const struct kage * kage,
           target_symbol_name, modname);
   return 0;
 }
+#endif 
 
 static void unprotect_trampolines(struct kage *kage)
 {
@@ -738,38 +760,43 @@ static void unprotect_trampolines(struct kage *kage)
 	}
 }
 
+static int set_memory_xonly(unsigned long addr, size_t size)
+{
+	int err;
+	int npages = size >> PAGE_SHIFT;
+
+	err = set_memory_x(addr, npages);
+	if (err) {
+		pr_err(MODULE_NAME ": Failed to set trampoline text "
+		       "executable: %pe\n", ERR_PTR(err));
+		return err;
+	}
+
+	err = set_memory_ro(addr, npages);
+	if (err) {
+		pr_err(MODULE_NAME ": Failed to set trampoline text "
+		       "read-only: %pe\n", ERR_PTR(err));
+		return err;
+	}
+
+	flush_icache_range(addr, addr + size);
+	return 0;
+}
+
 // Mark text RX and data R
 static int protect_trampolines(struct kage *kage)
 {
 	int err;
 
-	struct {
-		unsigned long text;
-		size_t size;
-	} parms[] = {
-		{(unsigned long)kage->g2h_tramp_text,
-			KAGE_G2H_TRAMP_REGION_SIZE },
-		{(unsigned long)kage->h2g_tramp_text,
-			KAGE_H2G_TRAMP_REGION_SIZE },
-	};
+	err = set_memory_xonly((unsigned long)kage->g2h_tramp_text, 
+			       KAGE_G2H_TRAMP_REGION_SIZE);
+	if (err)
+		return err;
 
-	for (int i=0; i<ARRAY_SIZE(parms); i++) {
-		err = set_memory_x(parms[i].text, parms[i].size >> PAGE_SHIFT);
-		if (err) {
-			pr_err(MODULE_NAME ": Failed to set trampoline text "
-			       "executable: %pe\n", ERR_PTR(err));
-			return err;
-		}
-
-		err = set_memory_ro(parms[i].text, parms[i].size >> PAGE_SHIFT);
-		if (err) {
-			pr_err(MODULE_NAME ": Failed to set trampoline text "
-			       "read-only: %pe\n", ERR_PTR(err));
-			return err;
-		}
-
-		flush_icache_range(parms[i].text, parms[i].text + parms[i].size);
-	}
+	err = set_memory_xonly((unsigned long)kage->h2g_tramp_text, 
+			       KAGE_H2G_TRAMP_REGION_SIZE);
+	if (err)
+		return err;
 
 	err = set_memory_ro((unsigned long)kage->g2h_tramp_data,
 			    KAGE_G2H_TRAMP_REGION_SIZE >> PAGE_SHIFT);
@@ -788,21 +815,13 @@ int kage_post_relocation(struct kage *kage,
                     unsigned int num_syms,
                     const char *strtab)
 {
-
-	// FIXME:  dynamically allocate in guest
-	unsigned long do_ret = find_symbol_address(kage, sechdrs, shnum,
-						   symtab, num_syms, strtab,
-						   "do_ret");
-	pr_info("do_ret addr=0x%lx\n", do_ret); // DEBUG
-	kage->exit_addr = do_ret;
-
 	fill_trampolines(kage);
 	int err = protect_trampolines(kage);
 	if (err)
 		return err;
 	return 0;
 }
-// FIXME: test what happens if this returns failure
+
 struct kage *kage_create(const char *modname)
 {
 	pr_info("%s started\n", __func__);

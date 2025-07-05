@@ -5,10 +5,8 @@
 #include <linux/types.h>
 #include <linux/module.h>
 #include <linux/assoc_array.h>
-#include <linux/kage_syscall.h>
 #include <linux/kage_asm.h>
 #include <linux/kage_objdescriptor.h>
-
 
 #define KAGE_GUEST_SIZE (4UL * 1024 * 1024 * 1024)
 

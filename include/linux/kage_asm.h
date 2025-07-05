@@ -24,30 +24,39 @@
 #define KAGE_GUEST_STACK_ORDER 13
 #define KAGE_GUEST_STACK_SIZE (1 << KAGE_GUEST_STACK_ORDER)
 
+// The maximum size of data spilled to the call stack in a G2H variadic call
 #define KAGE_MAX_STACK_ARGS_SIZE 256
-
-
-// Max number of different external functions a guest can call
-#define KAGE_MAX_G2H_CALLS 512
-
 
 // Size of lfi_g2h_trampoline text; 4 instructions of size 4
 #define KAGE_G2H_TRAMP_SIZE (4 * 4)
 
-
 #define KAGE_ALIGN(x, mask)(((x) + (mask) - 1) & ~(mask - 1))
 
 // Size of the each of the two guest-to-host trampoline regions
-#define KAGE_G2H_TRAMP_REGION_SIZE \
-	KAGE_ALIGN(KAGE_MAX_H2G_CALLS * KAGE_G2H_TRAMP_SIZE, PAGE_SIZE)
-#define KAGE_SETUP_KAGE_CALL_SIZE (40)
+#define KAGE_G2H_TRAMP_REGION_SIZE 8192
+
+// Max number of different external functions a guest can call
+#define KAGE_MAX_G2H_CALLS \
+((KAGE_G2H_TRAMP_REGION_SIZE - KAGE_DO_RET_SIZE) / KAGE_G2H_TRAMP_SIZE)
+
+// Size of do_ret assembly
+#define KAGE_DO_RET_SIZE (16)
+
+// Size of lfi_setup_kage_call assembly
+#define KAGE_SETUP_KAGE_CALL_SIZE (48)
+
+// Size of individual host-to-guest trampoline
 #define KAGE_H2G_TRAMP_SIZE (4 * 4)
+
+// Size of the host-to-guest trampoline region size
 #define KAGE_H2G_TRAMP_REGION_SIZE 4096
 
 // Max number of different callback a guest can register in host calls
 #define KAGE_MAX_H2G_CALLS \
 		((KAGE_H2G_TRAMP_REGION_SIZE - KAGE_SETUP_KAGE_CALL_SIZE) /\
-	         KAGE_H2G_TRAMP_SIZE)
+		 KAGE_H2G_TRAMP_SIZE)
+
+// Where the regular h2g trampolines end and lfi_setup_kage_call is placed
 #define KAGE_H2G_TRAMP_REGION_SETUP_OFFSET \
 		(KAGE_H2G_TRAMP_SIZE * KAGE_MAX_H2G_CALLS)
 

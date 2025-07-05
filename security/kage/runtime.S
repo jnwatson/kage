@@ -73,6 +73,18 @@
 	ldp x0, x1,   [x0, KAGE_LFIPROC_REG_X_OFFS(0)]
 .endm
 
+/* This code is executed in the guest to return from a function called by the
+ * host.  It jumps to lfi_ret through the guest's syscalls table. */
+.p2align 4
+.globl do_ret
+do_ret:
+        mov x26, x30
+        ldr x30, [x27, #24] // x30 = LFISys.rtcalls[3] (== &lfi_ret)
+        blr x30
+.p2align 4
+.globl do_ret_end
+do_ret_end:
+
 /* This code is called from guest to return back to the host when called
  * by lfi_asm_invoke, as well as when the guest calls into the host */
 .p2align 4
@@ -181,8 +193,8 @@ lfi_g2h_trampoline_end:
 .p2align 4
 .globl lfi_h2g_trampoline
 lfi_h2g_trampoline:
-	 ldr     x17, . + (KAGE_G2H_TRAMP_REGION_SIZE)
-	 ldr     x16, . + (KAGE_G2H_TRAMP_REGION_SIZE) + 4
+	 ldr     x17, . + (KAGE_H2G_TRAMP_REGION_SIZE)
+	 ldr     x16, . + (KAGE_H2G_TRAMP_REGION_SIZE) + 4
 /* This instruction gets patched to branch to lfi_setup_kage_call */
 	 brk     #0
 	 brk     #0
@@ -204,8 +216,9 @@ lfi_setup_kage_call:
 	mov x2, x0
 	mov x1, x16
 	mov x0, x17
-	ldr x16, . + (KAGE_G2H_TRAMP_REGION_SIZE) - 32
+	ldr x16, . + (KAGE_H2G_TRAMP_REGION_SIZE) - 32
 	br x16
+.p2align 4
 .globl lfi_setup_kage_call_end
 lfi_setup_kage_call_end:
 

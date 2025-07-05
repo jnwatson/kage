@@ -3,48 +3,12 @@
  * These functions sit outside the LFI sandbox and allow the sandbox to make
  * function calls into the kernel
  */
-#include "linux/kage_asm.h"
 #include <linux/assoc_array.h>
-#include <linux/cdev.h>
-#include <linux/debugfs.h>
-#include <linux/device.h>
-#include <linux/dynamic_debug.h>
 #include <linux/err.h>
-#include <linux/fs.h>
-#include <linux/interrupt.h>
-#include <linux/kage.h>
-#include <linux/module.h>
 #include <linux/printk.h>
-#include <linux/semaphore.h>
-#include <linux/slab.h>
-#include <linux/stdarg.h>
-#include <linux/uaccess.h>
-#include <linux/workqueue.h>
-#include <linux/delay.h>
-#include <linux/genalloc.h>
-#include <linux/klist.h>
-#include <linux/ktime.h>
-#include <linux/list.h>
-#include <linux/fortify-string.h>
-#ifdef CONFIG_GOOGLE_LOGBUFFER
-#include <linux/logbuffer.h>
-#endif
-#include <linux/mutex.h>
-#include <linux/nvmem-provider.h>
-#include <linux/nvmem-consumer.h>
-#include <linux/of.h>
-#include <linux/pm_wakeup.h>
-#include <linux/power_supply.h>
-#include <linux/regmap.h>
-#include <linux/seq_file.h>
 #include <linux/spinlock.h>
-#include <linux/timer.h>
-#include <linux/usb/tcpm.h>
-#ifdef CONFIG_CHARGER_MAX77759
-#include <linux/usb/max77759_export.h>
-#endif
 
-#include <linux/kage_syscall.h>
+#include <linux/kage.h>
 
 #include "runtime.h"
 #include "proc.h"
@@ -139,41 +103,43 @@ static void *get_closure_over(struct kage *kage, unsigned long func)
 {
 	unsigned long irq_flags;
 	struct assoc_array_edit *edit;
-	void *rv;
+	void *tramp;
 	struct kage_h2g_tramp_data_entry * entry;
 	if ((func - kage->base) >= KAGE_GUEST_SIZE) {
 		return ERR_PTR(-EINVAL);
 	}
 
 	spin_lock_irqsave(&kage->lock, irq_flags);
-	entry = assoc_array_find(&kage->closures, &kage_h2g_closure_ops,
+	tramp = assoc_array_find(&kage->closures, &kage_h2g_closure_ops,
 				   (void *)func);
-	if (entry)
+	if (tramp)
 		goto finish;
 
 	entry = alloc_h2g_entry(kage);
 	if (!entry) {
-		rv = ERR_PTR(-ENOMEM);
+		tramp = ERR_PTR(-ENOMEM);
 		goto on_err;
 	}
 
 	entry->kage = kage;
 	entry->guest_func = func;
 
+	// Each trampoline is exactly region size away from its literal pool
+	tramp = (void *)((u64)entry - KAGE_H2G_TRAMP_REGION_SIZE);
+
 	edit = assoc_array_insert(&kage->closures, &kage_h2g_closure_ops,
-				  (void *)func, entry);
+				  (void *)func, tramp);
 	if (IS_ERR(edit)) {
-		rv = edit;
+		tramp = edit;
 		goto on_err;
 	}
 	assoc_array_apply_edit(edit);
 finish:
-	rv = (void *)((u64)entry - KAGE_H2G_TRAMP_REGION_SIZE);
-        pr_info("closure_over created at 0x%lx for guest func 0x%lx",
-                (unsigned long)rv, func);
+        pr_info("closure_over created at 0x%px for guest func 0x%lx",
+                tramp, func);
 on_err:
 	spin_unlock_irqrestore(&kage->lock, irq_flags);
-	return rv;
+	return tramp;
 }
 
 struct rv_sig {

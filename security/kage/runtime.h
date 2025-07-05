@@ -11,5 +11,7 @@ extern void lfi_h2g_trampoline_end(void);
 extern void lfi_h2g_trampoline(void);
 extern void lfi_setup_kage_call(void);
 extern void lfi_setup_kage_call_end(void);
+extern void do_ret(void);
+extern void do_ret_end(void);
 
 #endif
