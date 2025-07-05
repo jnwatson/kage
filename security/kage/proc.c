@@ -7,7 +7,8 @@
 #include "arm64.h"
 
 extern uint64_t lfi_asm_invoke(struct LFIProc *proc, void *fn,
-			       void **kstackp) asm("lfi_asm_invoke");
+			       void **kstackp, void **sstackp) 
+	asm("lfi_asm_invoke");
 
 unsigned long procaddr(unsigned long base, unsigned long addr)
 {
@@ -26,7 +27,7 @@ static void proc_validate(struct LFIProc *proc)
 }
 
 void lfi_proc_init(struct LFIProc *proc, struct kage *kage, unsigned long entry,
-		   unsigned long sp, u32 idx)
+		   unsigned long sp, unsigned long ssp, u32 idx)
 {
 	proc->kage = kage;
 
@@ -35,7 +36,7 @@ void lfi_proc_init(struct LFIProc *proc, struct kage *kage, unsigned long entry,
 	*((uint32_t *)sp) = idx;
 	sp -= 12;
 
-	regs_init(&proc->regs, entry, sp);
+	regs_init(&proc->regs, entry, sp, ssp);
 
 	proc_validate(proc);
 }
@@ -51,5 +52,5 @@ uint64_t lfi_proc_invoke(struct LFIProc *proc, void *fn, void *ret,
 	*lfi_regs_arg(&proc->regs, 4) = p4;
 	*lfi_regs_arg(&proc->regs, 5) = p5;
 	proc->regs.x[30] = (uintptr_t)ret;
-	return lfi_asm_invoke(proc, fn, &proc->kstackp);
+	return lfi_asm_invoke(proc, fn, &proc->kstackp, &proc->sstackp);
 }

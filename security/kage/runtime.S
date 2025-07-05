@@ -82,6 +82,7 @@ lfi_ret:
 	// restore kernel stack from LFIProc.kstackp
 	ldr x22, [x27, #KAGE_LFIPROC_KSTACKP_OFFS]
 	mov sp, x22
+	ldr x18, [x27, #KAGE_LFIPROC_SSTACKP_OFFS]
 	// restore callee-saved registers
 	ldp x29, x30, [sp], 16
 	ldp x27, x28, [sp], 16
@@ -89,16 +90,13 @@ lfi_ret:
 	ldp x23, x24, [sp], 16
 	ldp x21, x22, [sp], 16
 	ldp x19, x20, [sp], 16
-	ldr x18,      [sp], 16
-	mov x15, 0
 	ret
 
 /* This is used for the host to call into the guest from a new run context */
-// lfi_asm_invoke(Proc* p, void* fn, void** kstackp)
+// lfi_asm_invoke(Proc* p, void* fn, void** kstackp, void **sstackp)
 .globl lfi_asm_invoke
 lfi_asm_invoke:
 	// save callee-saved registers to stack
-	str x18, [sp, #-16]!
 	stp x19, x20, [sp, #-16]!
 	stp x21, x22, [sp, #-16]!
 	stp x23, x24, [sp, #-16]!
@@ -107,8 +105,10 @@ lfi_asm_invoke:
 	stp x29, x30, [sp, #-16]!
 	// save stack to kstackp
 	mov x22, x1
-	mov x3, sp
-	str x3, [x2] //*3rd param = $sp
+	mov x4, sp
+	str x4, [x2] // *3rd param = $sp
+	// save shadow stack to sstackp
+	str x18, [x3] // *4th param = x18
 	RESTORE_INVOKE_REGS
 	br x22
 	brk #0
@@ -211,13 +211,17 @@ lfi_setup_kage_call_end:
 
 /* Precondition: x17 == struct kage_g2h_call *. */
 /* This code is jumped to from lfi_g2h_trampoline */
-.globl lfi_syscall_entry2
-lfi_syscall_entry2:
+.globl lfi_syscall_entry
+lfi_syscall_entry:
 	SAVE_PARTIAL_REGS
 	// struct LFIProc *proc == x27 now
 	// sp = proc->kstackp
 	ldr x16, [x27, KAGE_LFIPROC_KSTACKP_OFFS]
 	mov sp, x16
+
+	// x18 (shadow stack) = proc->sstackp
+	ldr x18, [x27, KAGE_LFIPROC_SSTACKP_OFFS]
+
 	mov x0, x27 // 1st arg: proc ptr
 	mov x1, x17 // 2nd arg: kage_g2h_call ptr
 	ldr x17, [x17, KAGE_G2H_CALL_GUARD_FUNC_OFFS]
@@ -240,6 +244,9 @@ lfi_syscall_entry_override:
 	// sp = proc->kstackp
 	ldr x16, [x27, KAGE_LFIPROC_KSTACKP_OFFS]
 	mov sp, x16
+
+	// x18 (shadow stack) = proc->sstackp
+	ldr x18, [x27, KAGE_LFIPROC_SSTACKP_OFFS]
 
 	/* Shift the argument registers to the right so kage param is first */
 	mov x7, x6
@@ -298,8 +305,9 @@ lfi_syscall_entry_variadic:
         mov   x2, x20   // size
 	bl    memcpy
 
-	// Switch to the host stack 
+	// Switch to the host stack and shadow stack
 	mov   sp, x0    // memcpy returns dest in x0
+	ldr   x18, [x27, #KAGE_LFIPROC_SSTACKP_OFFS]
 
 	// Call guard func 1 (guard_sig_precall)
 	mov x0, x27   // LFIProc* is 1st parameter

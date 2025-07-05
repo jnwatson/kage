@@ -314,7 +314,7 @@ u64 guard_sig_postcall(struct LFIProc *proc, struct kage_g2h_call *host_call, u6
 	return rv;
 }
 
-// Called from lfi_syscall_entry2
+// Called from lfi_syscall_entry
 /* Guards and calls a host call using just its signature */
 u64 guard_sig(struct LFIProc *proc, struct kage_g2h_call *host_call) {
 	LFIRegs *regs = &proc->regs;
@@ -393,7 +393,7 @@ struct kage_g2h_call *create_g2h_call(const char *name,
 	{
 		call->guard_func = (unsigned long)guard_sig;
 		call->guard_func2 = 0;
-		call->stub = (unsigned long)lfi_syscall_entry2;
+		call->stub = (unsigned long)lfi_syscall_entry;
 	}
 	call->name = name;
 	call->host_func = target_func;

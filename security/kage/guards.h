@@ -9,7 +9,7 @@ struct kage_g2h_call {
 	const char *name;
 	unsigned long guard_func; // usually == *guard_sig or guard_sig_precall
 	unsigned long guard_func2; // only for variadic
-	unsigned long stub; // == lfi_syscall_entry2
+	unsigned long stub; // == lfi_syscall_entry
 	unsigned long host_func; // The actual kernel function
 
         const char *sig; // from sigs.h

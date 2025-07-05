@@ -18,14 +18,15 @@ typedef struct LFISys {
 
 struct kage;
 struct LFIProc {
-	void *kstackp; // This must be first as lfi_ret depends on it
+	void *kstackp;
+	void *sstackp;
 	struct kage *kage;
 	// void* tp;
 	LFIRegs regs;
 };
 
 void lfi_proc_init(struct LFIProc *proc, struct kage *kage, uintptr_t entry,
-		   uintptr_t sp, uint32_t idx);
+		   uintptr_t sp, uintptr_t ssp, uint32_t idx);
 
 uint64_t lfi_proc_start(struct LFIProc *proc);
 

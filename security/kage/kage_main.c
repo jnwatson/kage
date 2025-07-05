@@ -18,6 +18,7 @@
 #include <linux/vmalloc.h>
 #include <asm/cacheflush.h>
 #include <asm/pgtable.h>
+#include <linux/scs.h>
 #include <asm-generic/vmlinux.lds.h>
 
 #include "runtime.h"
@@ -29,6 +30,8 @@
 #pragma clang optimize off
 
 static_assert(offsetof(struct LFIProc, kstackp) == KAGE_LFIPROC_KSTACKP_OFFS,
+	      "Inconsistency among proc.h and kage_asm.h");
+static_assert(offsetof(struct LFIProc, sstackp) == KAGE_LFIPROC_SSTACKP_OFFS,
 	      "Inconsistency among proc.h and kage_asm.h");
 static_assert(offsetof(struct LFIProc, kage) == KAGE_LFIPROC_KAGE_OFFS,
 	      "Inconsistency among proc.h and kage_asm.h");
@@ -228,7 +231,7 @@ on_err:
 
 struct g2h_tramp_data_entry {
 	const struct kage_g2h_call *call;
-	u64 trampoline; // points to lfi_syscall_entry2
+	u64 trampoline; // points to lfi_syscall_entry
 };
 
 static_assert(sizeof(struct g2h_tramp_data_entry)==KAGE_G2H_TRAMP_SIZE);
@@ -864,6 +867,23 @@ static struct LFIProc *alloc_lfiproc(struct kage *kage, int *ret_idx)
 	return lfiproc;
 }
 
+#ifdef CONFIG_SHADOW_CALL_STACK 
+static void * guest_scs_alloc(struct kage *kage)
+{
+        void * stack= kage_memory_alloc(kage, SCS_SIZE, MOD_DATA, GFP_SCS);
+	if (!stack) {
+		pr_err(MODULE_NAME " %s: Failed to allocate guest shadow stack\n",
+		       __func__);
+		return ERR_PTR(-ENOMEM);
+	}
+        return stack;
+}
+#else
+static void * guest_scs_alloc(struct kage *kage) {
+	return NULL;
+}
+#endif
+
 
 // Invoke a function call into the guest
 unsigned long kage_call(struct kage *kage, void * fn,
@@ -871,11 +891,11 @@ unsigned long kage_call(struct kage *kage, void * fn,
               unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	void *guest_stack;
+	void *guest_shadow_stack;
 	unsigned long rv;
 	int lfi_idx;
 	struct LFIProc *lfiproc;
 
-        // FIXME: check fn range
 	if (((unsigned long)fn - kage->base) >= KAGE_GUEST_SIZE) {
 		pr_err(MODULE_NAME " %s: call outside of guest range\n", 
 		       __func__);
@@ -893,32 +913,43 @@ unsigned long kage_call(struct kage *kage, void * fn,
 		return -1;
 	}
 
+	guest_shadow_stack = guest_scs_alloc(kage);
+	if (IS_ERR(guest_shadow_stack)) {
+		kage_memory_free(kage, guest_stack);
+		return -1;
+	}
+
 	lfiproc = alloc_lfiproc(kage, &lfi_idx);
 	pr_info(MODULE_NAME " %s allocated LFIProc slot %d\n", __func__, lfi_idx);
 	if (!lfiproc) {
 		pr_err(MODULE_NAME " %s: Failure to allocate LFI context\n", 
 		       __func__);
+		kage_memory_free(kage, guest_shadow_stack);
 		kage_memory_free(kage, guest_stack);
 		return -1;
 	}
 
 	unsigned long guest_stack_base = (unsigned long)guest_stack;
-	unsigned long guest_stack_end = guest_stack_base + KAGE_GUEST_STACK_SIZE;
+	unsigned long guest_stack_end = 
+			guest_stack_base + KAGE_GUEST_STACK_SIZE;
+	unsigned long guest_shadow_stack_end = 
+			(unsigned long)guest_shadow_stack + SCS_SIZE;
 
 	pr_info("guest stack at %px-%lx\n", guest_stack, guest_stack_end - 1);
+	if (guest_shadow_stack) 
+		pr_info("guest scs   at %px-%lx\n", guest_shadow_stack, 
+			guest_shadow_stack_end - 1);
 
-	lfi_proc_init(lfiproc, kage, (unsigned long)fn, guest_stack_end, lfi_idx);
+	// Shadow stacks grow up, so initialize it to the base 
+	lfi_proc_init(lfiproc, kage, (unsigned long)fn, guest_stack_end,
+		      (unsigned long)guest_shadow_stack, lfi_idx);
 	// pr_info("%s id=%d, fn=0x%lx, ret=0x%lx\n", __func__, lfi_idx, 
 	// 	(unsigned long)fn, kage->exit_addr);
-	u32 *inst = fn;
-inst = (u32 *)kage->exit_addr;
 	rv = lfi_proc_invoke(lfiproc, fn, (void *)(kage->exit_addr),
 			     p0, p1, p2, p3, p4, p5);
 
-	//this_cpu_write(kage_guest_sp_base, old_sp_base);
-	//this_cpu_write(kage_guest_sp_end, old_sp_end);
-
 	pr_info("%s to 0x%lx finished\n", __func__, (unsigned long)fn);
+	kage_memory_free(kage, guest_shadow_stack);
 	kage_memory_free(kage, guest_stack);
 	kfree(lfiproc);
 	kage->procs[lfi_idx] = NULL;
