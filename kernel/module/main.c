@@ -1469,7 +1469,7 @@ static int simplify_symbols(struct module *mod, const struct load_info *info)
 					  kernel_symbol_name(ksym),
 					  kernel_symbol_value(ksym));
 					if (!sym[i].st_value) {
-						ret = -ENOMEM;
+						ret = -EINVAL;
 						break;
 					}
 				}
@@ -2566,19 +2566,21 @@ static int post_relocation(struct module *mod, const struct load_info *info)
 
 	// FIXME: this is where LFI verification should go
 #ifdef CONFIG_SECURITY_KAGE
-	const Elf_Shdr *symtab_shdr = &info->sechdrs[info->index.sym];
-	const Elf_Sym *syms = 
-		((void *)info->hdr + symtab_shdr->sh_offset);
-	const char *strtab = 
-		((void *)info->hdr + info->sechdrs[info->index.str].sh_offset);
-	const unsigned int num_syms = 
-		symtab_shdr->sh_size / sizeof(Elf_Sym);
+	if (info->is_lfi) {
+		const Elf_Shdr *symtab_shdr = &info->sechdrs[info->index.sym];
+		const Elf_Sym *syms = 
+			((void *)info->hdr + symtab_shdr->sh_offset);
+		const char *strtab = ((void *)info->hdr +
+				      info->sechdrs[info->index.str].sh_offset);
+		const unsigned int num_syms = 
+			symtab_shdr->sh_size / sizeof(Elf_Sym);
 
-	int err = kage_post_relocation(mod->kage, info->sechdrs,
-				       info->hdr->e_shnum, syms, num_syms,
-				       strtab);
-	if (err < 0)
-		return err;
+		int err = kage_post_relocation(mod->kage, info->sechdrs,
+					       info->hdr->e_shnum, syms,
+					       num_syms, strtab);
+		if (err < 0)
+			return err;
+	}
 #endif
 
 	/* Arch-specific module finalizing. */

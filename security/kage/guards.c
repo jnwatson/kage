@@ -303,8 +303,8 @@ u64 guard_sig(struct LFIProc *proc, struct kage_g2h_call *host_call) {
 
 /* Guards for which the default guard_sig won't work (probably because
  * it is a kmalloc variant)
- * NOTE: this array must be sorted by name (so bsearch works) */
-struct kage_g2h_call guard_overrides[] = {
+ * NOTE: this array should be sorted by name (so bsearch works) */
+struct kage_g2h_call g2h_call_overrides[] = {
 	NAME_TO_GUARD_ENTRY(kmalloc_trace),
 };
 
@@ -320,12 +320,11 @@ static const char * find_sig(const char *func) {
 	return NULL;
 }
 
-struct kage_g2h_call *find_override(const char *name)
+static struct kage_g2h_call *find_g2h_call_override(const char *name)
 {
-	// FIXME: use bsearch
 	unsigned int i;
-	for (i=0; i<ARRAY_SIZE(guard_overrides); i++) {
-		struct kage_g2h_call *call = &guard_overrides[i];
+	for (i=0; i<ARRAY_SIZE(g2h_call_overrides); i++) {
+		struct kage_g2h_call *call = &g2h_call_overrides[i];
 		if (0 == strcmp(name, call->name)) {
 			return call;
 		}
@@ -333,14 +332,14 @@ struct kage_g2h_call *find_override(const char *name)
 	return NULL;
 }
 
-struct kage_g2h_call *create_g2h_call(const char *name, 
+struct kage_g2h_call *kage_guard_create_g2h_call(const char *name, 
 					unsigned long target_func)
 {
 	struct kage_g2h_call *call = kmalloc(sizeof(*call), GFP_KERNEL);
 	if (!call)
 		return ERR_PTR(-ENOMEM);
 
-	struct kage_g2h_call *over_call = find_override(name);
+	struct kage_g2h_call *over_call = find_g2h_call_override(name);
 	if (over_call) {
 		*call = *over_call;
 		call->host_func = target_func;
@@ -368,6 +367,65 @@ struct kage_g2h_call *create_g2h_call(const char *name,
 		return ERR_PTR(-EINVAL);
 	}
 	return call;
+}
+
+static unsigned long gvar_space_alloc(struct kage *kage, size_t size) 
+{
+	unsigned long start = (unsigned long)kage->gvar_space_open;
+	unsigned long end = (unsigned long)kage->gvar_space + KAGE_GVAR_SPACE_SIZE;
+	unsigned long pos = ALIGN(start, 16);
+	if (pos + size > end) {
+		pr_err(MODULE_NAME ": ran out of gvar space\n");
+		return 0;
+	}
+	kage->gvar_space_open = (void *)(pos + size);
+	return pos;
+}
+
+static unsigned long kmalloc_caches_resolve(struct kage *kage) 
+{
+	// Seems to work fine with everything just 0 initialized
+	return gvar_space_alloc(kage, sizeof(kmalloc_caches));
+}
+
+struct kage_gvar gvar_overrides[] = {
+	{"kmalloc_caches", kmalloc_caches_resolve, 0}
+};
+
+static struct kage_gvar *find_gvar_override(const char *name) {
+	unsigned int i;
+	for (i=0; i<ARRAY_SIZE(gvar_overrides); i++) {
+		struct kage_gvar *gvar = &gvar_overrides[i];
+		if (0 == strcmp(name, gvar->name)) {
+			return gvar;
+		}
+	}
+	return NULL;
+}
+
+unsigned long kage_guard_resolve_gvars(struct kage *kage, const char *name)
+{
+	unsigned int i;
+        for (i=0; i < kage->num_gvars; i++) {
+		if (name == kage->gvars[i].name)
+			return kage->gvars[i].addr;
+        }
+        struct kage_gvar *gvar_override = find_gvar_override(name);
+        if (!gvar_override)
+		return 0;
+	if (kage->num_gvars >= KAGE_MAX_GVARS) {
+		pr_err("Exceeded max imported variables by guest\n");
+		return 0;
+	}
+	struct kage_gvar *gvar = &kage->gvars[kage->num_gvars];
+	*gvar = *gvar_override;
+	gvar->addr = gvar->resolver(kage);
+	if (!gvar->addr) {
+		pr_err(MODULE_NAME ": Resolver failed for imported symbol %s\n", name);
+		return 0;
+	}
+	kage->num_gvars++;
+	return gvar->addr;
 }
 
 

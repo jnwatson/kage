@@ -136,8 +136,6 @@ class SigGen:
               sig.append(f'B{self.getobjindex(target)}')
             case 'FUNC_PROTO':
               has_func_ptr = True
-              print(f'My params = {",".join(p["name"] for p in params)}')
-              print(f'Func ptr  = {",".join(p["name"] for p in target["params"])}')
               sig.append(f'F{len(target["params"])}')
             case _:
               sig.append('P')

@@ -192,15 +192,18 @@ void * kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type,
 
 EXPORT_SYMBOL(kage_memory_alloc);
 
+static void free_trampolines(struct kage *kage)
+{
+	kage_memory_free(kage, kage->g2h_tramp_text);
+	vfree(kage->h2g_tramp_text);
+}
+
 /* Allocate two regions, one in guest, one in host, for trampolines.  Split
  * each of the two regions in half:  one for the text, one for its literal pool
  */
 static int alloc_trampolines(struct kage *kage)
 {
 	// g2h is allocated in guest space
-	kage->g2h_tramp_text = kage->g2h_tramp_data = NULL;
-	kage->h2g_tramp_text = kage->h2g_tramp_data = NULL;
-
 	kage->g2h_tramp_text =
 		kage_memory_alloc(kage, 2 * KAGE_G2H_TRAMP_REGION_SIZE,
 				  MOD_TEXT, GFP_KERNEL);
@@ -225,10 +228,7 @@ static int alloc_trampolines(struct kage *kage)
 	return 0;
 
 on_err:
-	kage_memory_free(kage, kage->g2h_tramp_text);
-	kage_memory_free(kage, kage->g2h_tramp_data);
-	vfree(kage->h2g_tramp_text);
-	vfree(kage->h2g_tramp_data);
+	free_trampolines(kage);
 	return -ENOMEM;
 }
 
@@ -323,12 +323,18 @@ unsigned long kage_symbol_value(struct kage *kage, const char *name,
 			return (unsigned long)kage->g2h_tramp_text +
 				i * KAGE_G2H_TRAMP_SIZE;
 	}
+
+	unsigned long addr = kage_guard_resolve_gvars(kage, name);
+	if (addr) {
+		return addr;
+	}
 	if (kage->num_g2h_calls >= ARRAY_SIZE(kage->g2h_calls)) {
 		pr_err(MODULE_NAME
 		       ": exceeded max external call sites from guest\n");
 		return 0;
 	}
-	struct kage_g2h_call *host_call = create_g2h_call(name, target_func);
+	struct kage_g2h_call *host_call = kage_guard_create_g2h_call(name,
+								     target_func);
 	if (IS_ERR(host_call)) {
 		pr_err(MODULE_NAME
 		       ": error %pe creating host call %s\n", host_call, name);
@@ -341,11 +347,23 @@ unsigned long kage_symbol_value(struct kage *kage, const char *name,
 	return ret;
 }
 
+static int alloc_gvar_space(struct kage *kage) {
+	void * mem = kage_memory_alloc(kage, KAGE_GVAR_SPACE_SIZE, MOD_DATA, 
+					GFP_KERNEL | __GFP_ZERO);
+	if (!mem) {
+		pr_err(MODULE_NAME ": ran out of memory allocating gvar space\n");
+		return -ENOMEM;
+	}
 
+	kage->gvar_space = kage->gvar_space_open = mem;
+	return 0;
+}
+
+/* Precondition: *kage is zero initialized */
 static int kage_init(struct kage *kage)
 {
 	unsigned long num_pages = KAGE_GUEST_SIZE >> PAGE_SHIFT;
-	int i, err;
+	int err;
 
 	spin_lock_init(&kage->lock);
 	kage->alloc_bitmap = bitmap_zalloc(num_pages, GFP_KERNEL);
@@ -360,16 +378,18 @@ static int kage_init(struct kage *kage)
 	if (err)
 		goto objstorage_err;
 
-	for (i = 0; i < ARRAY_SIZE(kage->procs); i++)
-		kage->procs[i] = NULL;
-	kage->open_proc_idx = 0;
 	assoc_array_init(&kage->closures);
-	kage->num_g2h_calls = 0;
-	kage->num_h2g_calls = 0;
 	err = alloc_trampolines(kage);
 	if (err)
 		goto tramp_err;
+
+	err = alloc_gvar_space(kage);
+	if (err)
+		goto gvar_err;
+
 	return 0;
+gvar_err:
+	free_trampolines(kage);
 tramp_err:
 	kfree(kage->objstorage);
 objstorage_err:
@@ -1041,10 +1061,10 @@ void kage_destroy(struct kage *kage)
 		kfree(kage->procs[i]);
 
 	unprotect_trampolines(kage);
+	free_trampolines(kage);
+
 	if (kage->alloc_bitmap)
 		kage_memory_free_all(kage);
-
-	vfree(kage->h2g_tramp_text);
 
 	kfree(kage->objstorage);
 

@@ -18,6 +18,8 @@
  * allocation.
  */
 #define KAGE_MAX_OBJ_INDEX 511
+#define KAGE_GVAR_SPACE_SIZE PAGE_SIZE
+#define KAGE_MAX_GVARS 16
 struct LFIProc; // FIXME: < prepend with kage
 struct LFISys; // prepend with kage
 struct kage;
@@ -27,13 +29,21 @@ struct kage_objstorage {
 	spinlock_t lock;
 	unsigned int next_slot;
 };
+
+// The literal pool entry for a single host-to-guest trampoline
 struct kage_h2g_tramp_data_entry {
 	struct kage *kage;
 	u64 guest_func; // callback into guest
 };
 
+// A guest imported variable
+struct kage_gvar {
+	const char *name;
+	unsigned long (*resolver)(struct kage *kage);
+	unsigned long addr;
+};
+
 struct kage {
-	
         const char *modname;
 	spinlock_t lock;
 
@@ -60,6 +70,14 @@ struct kage {
 	// Trampolines from guest to host and vice versa
 	unsigned int num_g2h_calls;
 	struct kage_g2h_call *g2h_calls[KAGE_MAX_G2H_CALLS];
+
+	// Guest's imported global variables; only used at load time
+	unsigned int num_gvars;
+	struct kage_gvar gvars[KAGE_MAX_GVARS];
+
+	void * gvar_space;
+	void * gvar_space_open;
+
 	void * g2h_tramp_text;
 	void * g2h_tramp_data;
 

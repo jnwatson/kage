@@ -12,7 +12,8 @@ struct kage_g2h_call {
         const char *sig; // from sigs.h
 };
 
-struct kage_g2h_call *create_g2h_call(const char *name, 
+struct kage_g2h_call *kage_guard_create_g2h_call(const char *name, 
 					unsigned long target_func);
+unsigned long kage_guard_resolve_gvars(struct kage *kage, const char *name);
 
 #endif /* _KAGE_GUARDS_H */
