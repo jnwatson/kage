@@ -26,7 +26,7 @@ struct LFIProc {
 };
 
 void lfi_proc_init(struct LFIProc *proc, struct kage *kage, uintptr_t entry,
-		   uintptr_t sp, uintptr_t ssp, uint32_t idx);
+		   uintptr_t sp, uintptr_t ssp);
 
 uint64_t lfi_proc_start(struct LFIProc *proc);
 

@@ -27,14 +27,12 @@ static void proc_validate(struct LFIProc *proc)
 }
 
 void lfi_proc_init(struct LFIProc *proc, struct kage *kage, unsigned long entry,
-		   unsigned long sp, unsigned long ssp, u32 idx)
+		   unsigned long sp, unsigned long ssp)
 {
 	proc->kage = kage;
 
-        // FIXME: put this where it can't be stomped
-	sp -= 4;
-	*((uint32_t *)sp) = idx;
-	sp -= 12;
+        // Store proc past the top of the stack in RO memory
+	*((unsigned long*)sp) = (unsigned long)proc;
 
 	regs_init(&proc->regs, entry, sp, ssp);
 

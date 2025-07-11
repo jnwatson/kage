@@ -17,8 +17,6 @@
 #define KAGE_G2H_CALL_GUARD_FUNC_OFFS 8
 #define KAGE_G2H_CALL_GUARD_FUNC2_OFFS 16
 #define KAGE_G2H_CALL_HOST_FUNC_OFFS 32
-/* == offsetof(struct LFISys, procs) */
-#define KAGE_LFISYS_PROCS_OFFS 2048
 
 /* log2(guest stack). Must == THREAD_SIZE_ORDER */
 #define KAGE_GUEST_STACK_ORDER 13

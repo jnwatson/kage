@@ -7,37 +7,18 @@
 .macro GET_PROC
 
 /* Precondition: syspage (base of guest domain) in x27
+   Postcondition: &LFIProc in x27
    Find the base of the stack (highest address) and load index into kage->procs
    The stack is 8KiB (0x2000) aligned. We find the top of the 8KiB block
    that SP is in, and then load the 32-bit word from the very top. */
    /* Add the stack size-1 to SP to guarantee we are in the next block (except
-      if we're already at the top of the stack */
+      if we're already at the top of the stack) */
     add   x16, sp, KAGE_GUEST_STACK_SIZE
     sub   x16, x16, 1
     // Clear the lower 13 bits to get the base address of the *next* 8KiB block
     and   x16, x16, ~(KAGE_GUEST_STACK_SIZE-1)
-    // Load the 32-bit index from the last 4 bytes of the current stack block.
-    ldr   w16, [x16, #-4] 
-    // w16 now holds the index; the upper 32 bits of x16 are zeroed.
-    // Check if the index is out of bounds (>= 8).
-    cmp   w16, #8
-    b.ge  1f
-
-    ldr   x27, [x27, KAGE_LFISYS_PROCS_OFFS]          // Load LFISys->procs
-
-    // Load LFISys->procs[i] into x27
-    ldr   x27, [x27, x16, LSL #3]
-    b     2f
-
-1:
-    /* FIXME: this is attacker controlled, but bounds checked by the other
-     * side.  Can attacker do bad things by hijacking another thread context?
-     * Solution: allocate an extra page when the stack is allocated, and then
-     * mark it RO
-     */
-	b 1b
- 
-2:  // done
+    // Load proc from the first bytes past the stack (in "proc data")
+    ldr   x27, [x16] 
 .endm
 
 // save caller-saved registers, assuming sandbox syspage is x27

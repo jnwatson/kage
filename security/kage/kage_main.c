@@ -37,8 +37,6 @@ static_assert(offsetof(struct LFIProc, kage) == KAGE_LFIPROC_KAGE_OFFS,
 	      "Inconsistency among proc.h and kage_asm.h");
 static_assert(offsetof(struct LFIProc, regs) == KAGE_LFIPROC_REGS_OFFS,
 	      "Inconsistency among proc.h and kage_asm.h");
-static_assert(offsetof(struct LFISys, procs) == KAGE_LFISYS_PROCS_OFFS,
-	      "Inconsistency among proc.h and kage_asm.h");
 static_assert(offsetof(struct kage_g2h_call, guard_func) ==
 			KAGE_G2H_CALL_GUARD_FUNC_OFFS,
 	      "Inconsistency among guards.h and kage_asm.h");
@@ -53,6 +51,7 @@ static_assert(KAGE_GUEST_STACK_ORDER <= THREAD_SIZE_ORDER + PAGE_SHIFT);
 // Size of the space reserved for *all* guests
 #define VM_AREA_SIZE (64UL * 1024 * 1024 * 1024)
 #define MAX_GUESTS (VM_AREA_SIZE / KAGE_GUEST_SIZE - 1)
+#define PROC_DATA_SIZE (PAGE_SIZE)
 
 // FIXME: avoid alloc inside of spinlock
 
@@ -878,11 +877,14 @@ EXPORT_SYMBOL(kage_create);
 
 static struct LFIProc *alloc_lfiproc(struct kage *kage, int *ret_idx)
 {
+	// FIXME: cache a full lfiproc (+ stack/scs/proc data) for vroom
 	int start_idx = kage->open_proc_idx;
 	int idx;
 	struct LFIProc *lfiproc;
 	unsigned long irq_flags;
 
+	// FIXME: now that we don't use proc indices, no need to preallocate
+	// LFIProcs
 	spin_lock_irqsave(&kage->lock, irq_flags);
 	while (kage->procs[kage->open_proc_idx]) {
 		kage->open_proc_idx =
@@ -927,7 +929,6 @@ static void * guest_scs_alloc(struct kage *kage) {
 }
 #endif
 
-
 // Invoke a function call into the guest
 unsigned long kage_call(struct kage *kage, void * fn,
               unsigned long p0, unsigned long p1, unsigned long p2,
@@ -938,6 +939,8 @@ unsigned long kage_call(struct kage *kage, void * fn,
 	unsigned long rv;
 	int lfi_idx;
 	struct LFIProc *lfiproc;
+	size_t alloc_size;
+	int err;
 
 	if (((unsigned long)fn - kage->base) >= KAGE_GUEST_SIZE) {
 		pr_err(MODULE_NAME " %s: call outside of guest range\n", 
@@ -945,10 +948,9 @@ unsigned long kage_call(struct kage *kage, void * fn,
 		return -1;
 	}
 
-	guest_stack = kage_memory_alloc_aligned(kage,
-						KAGE_GUEST_STACK_SIZE,
-						MOD_DATA, GFP_KERNEL,
-						THREAD_ALIGN);
+	alloc_size = KAGE_GUEST_STACK_SIZE + PROC_DATA_SIZE;
+	guest_stack = kage_memory_alloc_aligned(kage, alloc_size, MOD_DATA,
+						GFP_KERNEL, THREAD_ALIGN);
 	if (!guest_stack) {
 		pr_err(MODULE_NAME " %s: Failed to allocate guest stack\n", 
 		       __func__);
@@ -982,15 +984,25 @@ unsigned long kage_call(struct kage *kage, void * fn,
 		pr_info("guest scs   at %px-%lx\n", guest_shadow_stack, 
 			guest_shadow_stack_end - 1);
 
-	// Shadow stacks grow up, so initialize it to the base 
+	// Shadow stacks grow up, so initialize ssp to the lowest address
 	lfi_proc_init(lfiproc, kage, (unsigned long)fn, guest_stack_end,
-		      (unsigned long)guest_shadow_stack, lfi_idx);
-	// pr_info("%s id=%d, fn=0x%lx, ret=0x%lx\n", __func__, lfi_idx, 
-	// 	(unsigned long)fn, kage->exit_addr);
+		      (unsigned long)guest_shadow_stack);
+
+	// Mark the proc data read only
+	err = set_memory_ro(guest_stack_end, PROC_DATA_SIZE >> PAGE_SHIFT);
+	if (err) {
+		pr_err(MODULE_NAME ": Failed to set proc data"
+		       "read-only: %pe\n", ERR_PTR(err));
+		rv  = -1;
+		goto cleanup;
+	}
+
 	rv = lfi_proc_invoke(lfiproc, fn, (void *)(kage->exit_addr),
 			     p0, p1, p2, p3, p4, p5);
 
 	pr_info("%s to 0x%lx finished\n", __func__, (unsigned long)fn);
+cleanup:
+	// FIXME:  free proc
 	kage_memory_free(kage, guest_shadow_stack);
 	kage_memory_free(kage, guest_stack);
 	kfree(lfiproc);
