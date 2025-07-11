@@ -795,40 +795,13 @@ struct kage *kage_create(const char *modname)
 }
 EXPORT_SYMBOL(kage_create);
 
-static struct LFIProc *alloc_lfiproc(struct kage *kage, int *ret_idx)
+static struct LFIProc *alloc_lfiproc(struct kage *kage)
 {
 	// FIXME: cache a full lfiproc (+ stack/scs/proc data) for vroom
-	int start_idx = kage->open_proc_idx;
-	int idx;
 	struct LFIProc *lfiproc;
-	unsigned long irq_flags;
 
-	// FIXME: now that we don't use proc indices, no need to preallocate
-	// LFIProcs
-	spin_lock_irqsave(&kage->lock, irq_flags);
-	while (kage->procs[kage->open_proc_idx]) {
-		kage->open_proc_idx =
-			(kage->open_proc_idx + 1) % ARRAY_SIZE(kage->procs);
-		if (start_idx == kage->open_proc_idx) {
-			spin_unlock_irqrestore(&kage->lock, irq_flags);
-			return NULL;
-		}
-	}
-	idx = kage->open_proc_idx;
-	// Reserve the slot so no one takes it
-	kage->procs[idx] = (struct LFIProc *)1;
-	spin_unlock_irqrestore(&kage->lock, irq_flags);
+	lfiproc = kzalloc(sizeof(*lfiproc), GFP_KERNEL);
 
-	lfiproc = kmalloc(sizeof(*lfiproc), GFP_KERNEL);
-	if (!lfiproc) {
-		kage->procs[idx] = NULL;
-		return NULL;
-	}
-
-	*ret_idx = idx;
-	kage->procs[idx] = lfiproc;
-	kage->open_proc_idx =
-		(idx + 1) % ARRAY_SIZE(kage->procs);
 	return lfiproc;
 }
 
@@ -857,7 +830,6 @@ unsigned long kage_call(struct kage *kage, void * fn,
 	void *guest_stack;
 	void *guest_shadow_stack;
 	unsigned long rv;
-	int lfi_idx;
 	struct LFIProc *lfiproc;
 	size_t alloc_size;
 	int err;
@@ -883,8 +855,7 @@ unsigned long kage_call(struct kage *kage, void * fn,
 		return -1;
 	}
 
-	lfiproc = alloc_lfiproc(kage, &lfi_idx);
-	pr_info(MODULE_NAME " %s allocated LFIProc slot %d\n", __func__, lfi_idx);
+	lfiproc = alloc_lfiproc(kage);
 	if (!lfiproc) {
 		pr_err(MODULE_NAME " %s: Failure to allocate LFI context\n", 
 		       __func__);
@@ -922,11 +893,10 @@ unsigned long kage_call(struct kage *kage, void * fn,
 
 	pr_info("%s to 0x%lx finished\n", __func__, (unsigned long)fn);
 cleanup:
-	// FIXME:  free proc
+	set_memory_rw(guest_stack_end, PROC_DATA_SIZE >> PAGE_SHIFT);
 	kage_memory_free(kage, guest_shadow_stack);
 	kage_memory_free(kage, guest_stack);
 	kfree(lfiproc);
-	kage->procs[lfi_idx] = NULL;
 	return rv;
 }
 
@@ -991,9 +961,6 @@ void kage_destroy(struct kage *kage)
 
 	for (i = 0; i < kage->num_g2h_calls; i++)
 		kfree(kage->g2h_calls[i]);
-
-	for (i = 0; i < ARRAY_SIZE(kage->procs); i++)
-		kfree(kage->procs[i]);
 
 	unprotect_trampolines(kage);
 	free_trampolines(kage);

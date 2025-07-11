@@ -10,8 +10,6 @@
 
 #define KAGE_GUEST_SIZE (4UL * 1024 * 1024 * 1024)
 
-#define KAGE_MAX_PROCS 8
-
 /*
  * While object descriptors reserve 16 bits for the index, we limit the
  * actual number of objects to a smaller value to avoid excessive memory
@@ -56,20 +54,9 @@ struct kage {
         // The next available location in the guest
 	unsigned long next_open_memory_offs;
 
-        // Run contexts
-	struct LFIProc *procs[KAGE_MAX_PROCS];
-
-	int open_proc_idx;
-
-	struct LFISys *sys;
-
 	// Where the instruction sequence to exit from guest lives (inside the
 	// guest)
 	unsigned long exit_addr;
-
-	// Trampolines from guest to host and vice versa
-	unsigned int num_g2h_calls;
-	struct kage_g2h_call *g2h_calls[KAGE_MAX_G2H_CALLS];
 
 	// Guest's imported global variables; only used at load time
 	unsigned int num_gvars;
@@ -78,12 +65,17 @@ struct kage {
 	void * gvar_space;
 	void * gvar_space_open;
 
+	// Pointers to trampolines text and literal pools
 	void * g2h_tramp_text;
 	void * g2h_tramp_data;
-
-	unsigned int num_h2g_calls;
 	void * h2g_tramp_text;
 	struct kage_h2g_tramp_data_entry * h2g_tramp_data;
+
+	// Trampolines from guest to host and vice versa
+	unsigned int num_g2h_calls;
+	struct kage_g2h_call *g2h_calls[KAGE_MAX_G2H_CALLS];
+
+	unsigned int num_h2g_calls;
 
 	struct assoc_array closures;
 
