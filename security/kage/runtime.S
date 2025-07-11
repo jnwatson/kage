@@ -73,13 +73,13 @@
 	ldp x0, x1,   [x0, KAGE_LFIPROC_REG_X_OFFS(0)]
 .endm
 
-/* This code is executed in the guest to return from a function called by the
- * host.  It jumps to lfi_ret through the guest's syscalls table. */
+/* This trampoline is executed in the guest to return from a function called by the
+ * host. */
 .p2align 4
 .globl do_ret
 do_ret:
         mov x26, x30
-        ldr x30, [x27, #24] // x30 = LFISys.rtcalls[3] (== &lfi_ret)
+	ldr x30, . + (KAGE_G2H_TRAMP_REGION_SIZE - 4)
         blr x30
 .p2align 4
 .globl do_ret_end

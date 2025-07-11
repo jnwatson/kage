@@ -262,7 +262,7 @@ static void fill_trampolines(struct kage *kage)
 		tramp_loc += KAGE_G2H_TRAMP_SIZE;
 	}
 
-	// Copy in do_ret
+	// Copy in do_ret text
 	kage->exit_addr = tramp_loc;
 	memcpy((void *)tramp_loc, &do_ret, KAGE_DO_RET_SIZE);
 	tramp_loc += KAGE_DO_RET_SIZE;
@@ -281,6 +281,10 @@ static void fill_trampolines(struct kage *kage)
 	left = (unsigned long)kage->g2h_tramp_data + KAGE_G2H_TRAMP_REGION_SIZE
 			- (unsigned long)(&entry[i]);
 	memset(&entry[i], 0, left);
+
+	// Copy in do_ret literal (&lfi_ret)
+	*(unsigned long *)(kage->exit_addr + KAGE_G2H_TRAMP_REGION_SIZE) = 
+			(unsigned long)&lfi_ret;
 
 	/* Copy in the H2G trampolines (in host memory).  The literal pool
 	 * gets filled in later dynamically */
@@ -940,7 +944,6 @@ unsigned long kage_call(struct kage *kage, void * fn,
 		       __func__);
 		return -1;
 	}
-
 
 	guest_stack = kage_memory_alloc_aligned(kage,
 						KAGE_GUEST_STACK_SIZE,
