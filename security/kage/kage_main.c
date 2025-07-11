@@ -680,79 +680,6 @@ static struct kage *alloc_kage(void)
 	return kage;
 }
 
-/* Setup the syspage at the lowest address of the guest range */
-static int setup_lfisys(struct kage *kage)
-{
-	unsigned long lfisys_end = ALIGN((kage->base + sizeof(struct LFISys)),
-					 PAGE_SIZE);
-	void *sysmem = kage_memory_alloc_explicit(kage, kage->base, lfisys_end,
-						  MOD_DATA, true, GFP_KERNEL);
-
-	if (IS_ERR(sysmem))
-		return PTR_ERR(sysmem);
-
-	kage->sys = (struct LFISys *)kage->base;
-        // FIXME: remove rtcalls
-	kage->sys->rtcalls[3] = (unsigned long)&lfi_ret;
-	kage->sys->procs = &kage->procs;
-	return 0;
-}
-
-// Don't need this right now
-#if 0
-static unsigned long find_symbol_address(const struct kage * kage,
-					 const Elf_Shdr *sechdrs,
-                                         unsigned int shnum,
-                                         const Elf_Sym *symtab,
-                                         unsigned int num_syms,
-                                         const char *strtab,
-                                         const char *target_symbol_name)
-{
-  unsigned int i;
-  const Elf_Sym *s;
-  const char *name;
-  const char *modname = kage->modname;
-
-  /* Basic validation of the data passed from the loader. */
-  if (!sechdrs || !symtab || !strtab) {
-          pr_warn("kage: Invalid ELF data provided for module '%s'\n", modname);
-          return 0;
-  }
-
-  /* Iterate through all symbols in the module's symbol table. */
-  for (i = 0; i < num_syms; i++) {
-          s = &symtab[i];
-          name = strtab + s->st_name;
-
-          if (strcmp(name, target_symbol_name) == 0) {
-                  /*
-                   * Found the symbol by name. The symbol's section index
-                   * (st_shndx) tells us which section it belongs to.
-                   */
-                  if (s->st_shndx >= shnum || s->st_shndx == SHN_UNDEF) {
-                          pr_warn("kage: Symbol '%s' in module '%s' has an invalid section index %u\n",
-                                  target_symbol_name, modname, s->st_shndx);
-                          return 0;
-                  }
-
-                  /*
-                   * The final address is the base address where the section was
-                   * loaded (sechdrs[s->st_shndx].sh_addr) plus the symbol's
-                   * offset within that section (s->st_value).
-                   *
-                   * This relies on the caller having already run the layout
-                   * logic that populates sh_addr with the final VMA.
-                   */
-                  return sechdrs[s->st_shndx].sh_addr + s->st_value;
-          }
-  }
-
-  pr_warn("kage: Symbol '%s' not found in module '%s'\n",
-          target_symbol_name, modname);
-  return 0;
-}
-#endif 
-
 static void unprotect_trampolines(struct kage *kage)
 {
 	int err;
@@ -851,7 +778,6 @@ struct kage *kage_create(const char *modname)
 
 	struct kage *kage;
 	int err;
-	bool in_cs = false;
 
 	kage = alloc_kage();
 	if (IS_ERR(kage)) {
@@ -859,19 +785,13 @@ struct kage *kage_create(const char *modname)
 	}
 
 	err = kage_init(kage);
-	if (err)
-		goto on_err;
+	if (err) {
+		kage_destroy(kage);
+		return ERR_PTR(err);
+	}
 
-	in_cs = false;
-
-	err = setup_lfisys(kage);
-	if (err)
-		goto on_err;
 	pr_info("%s with base 0x%lx finished\n", __func__, kage->base);
 	return kage;
-on_err:
-	kage_destroy(kage);
-	return ERR_PTR(err);
 }
 EXPORT_SYMBOL(kage_create);
 

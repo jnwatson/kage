@@ -11,11 +11,6 @@ typedef struct LFIRegs {
 
 struct LFIProc;
 
-typedef struct LFISys {
-	uintptr_t rtcalls[256];
-	struct LFIProc *(*procs)[]; /* == &kage->procs */
-} LFISys;
-
 struct kage;
 struct LFIProc {
 	void *kstackp;
