@@ -18,8 +18,6 @@
 #define KAGE_MAX_OBJ_INDEX 511
 #define KAGE_GVAR_SPACE_SIZE PAGE_SIZE
 #define KAGE_MAX_GVARS 16
-struct LFIProc; // FIXME: < prepend with kage
-struct LFISys; // prepend with kage
 struct kage;
 
 struct kage_objstorage {

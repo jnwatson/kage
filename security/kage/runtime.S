@@ -1,9 +1,7 @@
 #include <linux/kage_asm.h>
 .text
 
-// All this code runs in the host, not the sandbox
-
-// Places the pointer to the active LFIProc in x27.
+// Places the pointer to the active kage_proc in x27.
 .macro GET_PROC
 /* Precondition: syspage (base of guest domain) in x27 */
 
@@ -68,7 +66,7 @@ do_ret_end:
 .globl lfi_ret
 lfi_ret:
 	GET_PROC
-	// restore kernel stack from LFIProc.kstackp
+	// restore kernel stack from kage_proc.kstackp
 	ldr x22, [x27, #KAGE_LFIPROC_KSTACKP_OFFS]
 	mov sp, x22
 	ldr x18, [x27, #KAGE_LFIPROC_SSTACKP_OFFS]
@@ -149,9 +147,8 @@ lfi_restore_regs:
 	brk #0
 
 /* The trampoline code region and the trampoline data region (aka literal pool)
- * are the same size, separated by an empty page.  This code will be duplicated
- * in the code section as many times as there are different guest kernel calls
- * */
+ * are the same size.  This code will be duplicated in the code section as many
+ * times as there are different guest kernel calls */
 
 /* This code is repeated in the g2h text region.  Host calls in the
  * guest resolve to an instance of this */
@@ -204,7 +201,7 @@ lfi_setup_kage_call_end:
 .globl lfi_syscall_entry
 lfi_syscall_entry:
 	SAVE_PARTIAL_REGS
-	// struct LFIProc *proc == x27 now
+	// struct kage_proc *proc == x27 now
 	// sp = proc->kstackp
 	ldr x16, [x27, KAGE_LFIPROC_KSTACKP_OFFS]
 	mov sp, x16
@@ -229,7 +226,7 @@ lfi_syscall_entry:
 .globl lfi_syscall_entry_override
 lfi_syscall_entry_override:
 	SAVE_PARTIAL_REGS
-	// struct LFIProc *proc == x27 now
+	// struct kage_proc *proc == x27 now
 
 	// sp = proc->kstackp
 	ldr x16, [x27, KAGE_LFIPROC_KSTACKP_OFFS]
@@ -246,13 +243,13 @@ lfi_syscall_entry_override:
 	mov x3, x2
 	mov x2, x1
 	mov x1, x0
-	mov x0, x27 // Move LFIProc * into first argument
+	mov x0, x27 // Move kage_proc * into first argument
 	ldr x17, [x17, KAGE_G2H_CALL_GUARD_FUNC_OFFS]
 
 	blr x17 // Call guard function
 	// proc->regs[0] = return value from guard func
 	str x0, [x27, KAGE_LFIPROC_REGS_OFFS+16*0]
-	mov x0, x27 // LFIProc * into x0
+	mov x0, x27 // kage_proc * into x0
 	b  lfi_restore_partial_regs
 	brk #0
 
@@ -265,12 +262,12 @@ lfi_syscall_entry_variadic:
 	str x19,      [x27, KAGE_LFIPROC_REG_X_OFFS(19)]
 	str x20,      [x27, KAGE_LFIPROC_REG_X_OFFS(20)]
 	str x22,      [x27, KAGE_LFIPROC_REG_X_OFFS(22)]
-	// x27 now contains LFIProc*
+	// x27 now contains kage_proc*
 	// x1 still contains guest sp
 
 	// Copy Guest Stack Arguments to Host Stack
 
-	// Get the host kernel stack pointer (offset 0 from LFIProc*)
+	// Get the host kernel stack pointer (offset 0 from kage_proc*)
 	ldr   x19, [x27]
 
 	// Calculate the top of the guest's current stack
@@ -300,7 +297,7 @@ lfi_syscall_entry_variadic:
 	ldr   x18, [x27, #KAGE_LFIPROC_SSTACKP_OFFS]
 
 	// Call guard func 1 (guard_sig_precall)
-	mov x0, x27   // LFIProc* is 1st parameter
+	mov x0, x27   // kage_proc* is 1st parameter
 	mov x1, x22   // kage_g2h_call* is 2nd parameter
 	ldr x15, [x22, KAGE_G2H_CALL_GUARD_FUNC_OFFS]
 	blr x15
@@ -333,12 +330,9 @@ lfi_syscall_entry_variadic:
 
 	// Cleanup
 	add sp, sp, x20  // Restore the stack
-	mov x0, x27 // LFIProc* into x0 for the return path
+	mov x0, x27 // kage_proc* into x0 for the return path
 	ldr x19,      [x0, KAGE_LFIPROC_REG_X_OFFS(19)]
 	ldr x20,      [x0, KAGE_LFIPROC_REG_X_OFFS(20)]
 	ldr x22,      [x0, KAGE_LFIPROC_REG_X_OFFS(22)]
 	b  lfi_restore_partial_regs
 	brk #0
-
-
-

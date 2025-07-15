@@ -20,7 +20,7 @@
 // DEBUG
 #pragma clang optimize off
 
-static unsigned long guard_kmalloc_trace(struct LFIProc *proc, 
+static unsigned long guard_kmalloc_trace(struct kage_proc *proc, 
 					 struct kmem_cache *s, gfp_t flags, 
 					 size_t size)
 {
@@ -28,7 +28,7 @@ static unsigned long guard_kmalloc_trace(struct LFIProc *proc,
 }
 
 /* Parses and returns a positive integer while advancing the pointer.
- * Postcondition: *str points to the last character of number */
+ * Postcondition: *str points to the last digit of the number */
 static u32 eat_num(const char **str) {
 	u32 objidx = 0;
 	bool valid = false;
@@ -92,7 +92,7 @@ static const struct assoc_array_ops kage_h2g_closure_ops = {
  * address.  The returned new function, when called, calls kage_call with the
  * first two arguments being kage and func.
  *
- * The associate array (aka dict) stores entry pointers indexed by the original
+ * The associative array (aka dict) stores entry pointers indexed by the original
  * function, so if the guest uses the same callback twice (or just uses it in a
  * loop), it only allocates one closure.  The entry pointer is exactly
  * KAGE_H2G_TRAMP_REGION_SIZE ahead of the actual call site, since the entry is
@@ -148,12 +148,11 @@ struct rv_sig {
 	u32 rv_obj_type;
 };
 
-// Called from lfi_syscall_variadic
 /* Guards and calls a host call using just its signature */
-int guard_sig_precall(struct LFIProc *proc, struct kage_g2h_call *host_call)
+int guard_sig_precall(struct kage_proc *proc, struct kage_g2h_call *host_call)
 {
 	const char *sig = host_call->sig;
-	LFIRegs *regs = &proc->regs;
+	kage_regs *regs = &proc->regs;
 	int regnum = -1;
 	u32 objidx;
 	u64 val = 0;
@@ -240,7 +239,7 @@ int guard_sig_precall(struct LFIProc *proc, struct kage_g2h_call *host_call)
 	return 0;
 }
 
-u64 guard_sig_postcall(struct LFIProc *proc, struct kage_g2h_call *host_call, u64 rv) {
+u64 guard_sig_postcall(struct kage_proc *proc, struct kage_g2h_call *host_call, u64 rv) {
 	const char *sig = host_call->sig;
 	switch (sig[0]) {
 	case 'I':
@@ -282,8 +281,8 @@ u64 guard_sig_postcall(struct LFIProc *proc, struct kage_g2h_call *host_call, u6
 
 // Called from lfi_syscall_entry
 /* Guards and calls a host call using just its signature */
-u64 guard_sig(struct LFIProc *proc, struct kage_g2h_call *host_call) {
-	LFIRegs *regs = &proc->regs;
+u64 guard_sig(struct kage_proc *proc, struct kage_g2h_call *host_call) {
+	kage_regs *regs = &proc->regs;
 	if (guard_sig_precall(proc, host_call)) {
 		return -EINVAL;
 	}

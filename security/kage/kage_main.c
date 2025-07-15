@@ -29,13 +29,13 @@
 // DEBUG
 #pragma clang optimize off
 
-static_assert(offsetof(struct LFIProc, kstackp) == KAGE_LFIPROC_KSTACKP_OFFS,
+static_assert(offsetof(struct kage_proc, kstackp) == KAGE_LFIPROC_KSTACKP_OFFS,
 	      "Inconsistency among proc.h and kage_asm.h");
-static_assert(offsetof(struct LFIProc, sstackp) == KAGE_LFIPROC_SSTACKP_OFFS,
+static_assert(offsetof(struct kage_proc, sstackp) == KAGE_LFIPROC_SSTACKP_OFFS,
 	      "Inconsistency among proc.h and kage_asm.h");
-static_assert(offsetof(struct LFIProc, kage) == KAGE_LFIPROC_KAGE_OFFS,
+static_assert(offsetof(struct kage_proc, kage) == KAGE_LFIPROC_KAGE_OFFS,
 	      "Inconsistency among proc.h and kage_asm.h");
-static_assert(offsetof(struct LFIProc, regs) == KAGE_LFIPROC_REGS_OFFS,
+static_assert(offsetof(struct kage_proc, regs) == KAGE_LFIPROC_REGS_OFFS,
 	      "Inconsistency among proc.h and kage_asm.h");
 static_assert(offsetof(struct kage_g2h_call, guard_func) ==
 			KAGE_G2H_CALL_GUARD_FUNC_OFFS,
@@ -233,7 +233,8 @@ on_err:
 
 struct g2h_tramp_data_entry {
 	const struct kage_g2h_call *call;
-	u64 trampoline; // points to lfi_syscall_entry
+	unsigned long trampoline; // points to lfi_syscall_entry FIXME change to target or
+			// something
 };
 
 static_assert(sizeof(struct g2h_tramp_data_entry)==KAGE_G2H_TRAMP_SIZE);
@@ -795,10 +796,10 @@ struct kage *kage_create(const char *modname)
 }
 EXPORT_SYMBOL(kage_create);
 
-static struct LFIProc *alloc_lfiproc(struct kage *kage)
+static struct kage_proc *alloc_lfiproc(struct kage *kage)
 {
 	// FIXME: cache a full lfiproc (+ stack/scs/proc data) for vroom
-	struct LFIProc *lfiproc;
+	struct kage_proc *lfiproc;
 
 	lfiproc = kzalloc(sizeof(*lfiproc), GFP_KERNEL);
 
@@ -830,7 +831,7 @@ unsigned long kage_call(struct kage *kage, void * fn,
 	void *guest_stack;
 	void *guest_shadow_stack;
 	unsigned long rv;
-	struct LFIProc *lfiproc;
+	struct kage_proc *lfiproc;
 	size_t alloc_size;
 	int err;
 

@@ -3,32 +3,32 @@
 
 #include <linux/types.h>
 
-typedef struct LFIRegs {
+typedef struct kage_regs {
 	uint64_t x[31];
 	uint64_t sp;
 	uint64_t _pad;
-} LFIRegs;
+} kage_regs;
 
-struct LFIProc;
+struct kage_proc;
 
 struct kage;
-struct LFIProc {
+struct kage_proc {
 	void *kstackp;
 	void *sstackp;
 	struct kage *kage;
 	// void* tp;
-	LFIRegs regs;
+	kage_regs regs;
 };
 
-void lfi_proc_init(struct LFIProc *proc, struct kage *kage, uintptr_t entry,
+void lfi_proc_init(struct kage_proc *proc, struct kage *kage, uintptr_t entry,
 		   uintptr_t sp, uintptr_t ssp);
 
-uint64_t lfi_proc_start(struct LFIProc *proc);
+uint64_t lfi_proc_start(struct kage_proc *proc);
 
-void lfi_proc_free(struct LFIProc *proc);
+void lfi_proc_free(struct kage_proc *proc);
 
 
-uint64_t lfi_proc_invoke(struct LFIProc *proc, void *fn, void *ret,
+uint64_t lfi_proc_invoke(struct kage_proc *proc, void *fn, void *ret,
                          uint64_t p0, uint64_t p1, uint64_t p2,
                          uint64_t p3, uint64_t p4, uint64_t p5);
 

@@ -3,5 +3,6 @@ config SECURITY_KAGE
 	bool "Enable LFI-based sandboxing of other kernel modules"
 	default n
 	help
-	   A specially-built kernel module can be sandboxed. TODO
+	   Enable this to allow specially-built kernel modules to be sandboxed.
+	   The sandbox restricts the module's access to memory and kernel functions.
 
