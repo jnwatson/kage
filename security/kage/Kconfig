@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 config SECURITY_KAGE
 	bool "Enable LFI-based sandboxing of other kernel modules"
+	depends on DEBUG_INFO_BTF
 	default n
 	help
 	   Enable this to allow specially-built kernel modules to be sandboxed.

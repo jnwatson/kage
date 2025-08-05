@@ -961,7 +961,7 @@ void kage_destroy(struct kage *kage)
 	pr_info(MODULE_NAME ": destroying kage owner_id=%d\n", kage->owner_id);
 
 	for (i = 0; i < kage->num_g2h_calls; i++)
-		kfree(kage->g2h_calls[i]);
+		kage_guard_destroy_g2h_call(kage->g2h_calls[i]);
 
 	unprotect_trampolines(kage);
 	free_trampolines(kage);

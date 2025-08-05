@@ -2,6 +2,6 @@
 #
 obj-$(CONFIG_SECURITY_KAGE) 		+= kage.o
 EXTRA_CFLAGS += -Og
-kage-y := kage_main.o arm64.o proc.o runtime.o guards.o
+kage-y := kage_main.o arm64.o proc.o runtime.o guards.o funcsig.o
 
 
