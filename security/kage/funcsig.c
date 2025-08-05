@@ -137,7 +137,6 @@ struct kage_argspec *kage_get_funcspec(const char *func_name)
 		kfree(specs);
 		return NULL;
 	}
-        pr_info("%s rv type %d\n", func_name, specs[0].kind);
 
 	for (i = 0; i < nargs; i++) {
 		const struct btf_param *p = btf_params(proto_t) + i;
@@ -164,7 +163,6 @@ struct kage_argspec *kage_get_funcspec(const char *func_name)
 
 		if (spec->kind == KAGE_ARG_FUNC_PTR)
 			has_func_ptr = true;
-		pr_info("%s a%d type %d\n", func_name, i+1, spec->kind);
 	}
 
 	specs[nargs + 1].kind = KAGE_ARG_END;
