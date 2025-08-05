@@ -1312,4 +1312,3 @@ int binder_alloc_copy_from_buffer(struct binder_alloc *alloc,
 					   dest, bytes);
 }
 EXPORT_SYMBOL_GPL(binder_alloc_copy_from_buffer);
-MODULE_LICENSE("GPL v2");
