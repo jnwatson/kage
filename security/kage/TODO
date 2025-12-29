@@ -4,5 +4,6 @@ Allow tracepoints
 Allow module constructors
 Randomize kage_vm_area
 Randomize location of first module in kage_vm_area
-
 Replace module init and exit with closures and kage_call to reduce module code change
+Add verifier
+
