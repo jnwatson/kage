@@ -255,11 +255,11 @@ u64 guard_sig(struct kage_proc *proc, struct kage_g2h_call *host_call)
 	return guard_sig_postcall(proc, host_call, rv);
 }
 
-#define NAME_TO_GUARD_ENTRY(s)                               \
-	{ .name = #s,                                        \
-	  .guard_func = (unsigned long)guard_##s,            \
-	  .guard_func2 = 0,                                  \
-	  .stub = (unsigned long)lfi_syscall_entry_override, \
+#define NAME_TO_GUARD_ENTRY(s) \
+	{ .name = #s, \
+	  .guard_func = (unsigned long)guard_##s, \
+	  .guard_func2 = 0, \
+	  .stub = 0, \
 	  .spec = NULL }
 
 /* Guards for which the default guard_sig won't work (probably because
@@ -269,6 +269,9 @@ struct kage_g2h_call g2h_call_overrides[] = {
 	NAME_TO_GUARD_ENTRY(kmalloc_trace),
 };
 
+void kage_guards_init(void) {
+	g2h_call_overrides[0].stub = (unsigned long)lfi_syscall_entry_override;
+}
 static struct kage_g2h_call *find_g2h_call_override(const char *name)
 {
 	unsigned int i;
@@ -276,9 +279,8 @@ static struct kage_g2h_call *find_g2h_call_override(const char *name)
 	for (i = 0; i < ARRAY_SIZE(g2h_call_overrides); i++) {
 		struct kage_g2h_call *call = &g2h_call_overrides[i];
 
-		if (0 == strcmp(name, call->name)) {
+		if (0 == strcmp(name, call->name))
 			return call;
-		}
 	}
 	return NULL;
 }
@@ -355,9 +357,8 @@ static struct kage_gvar *find_gvar_override(const char *name)
 	for (i = 0; i < ARRAY_SIZE(gvar_overrides); i++) {
 		struct kage_gvar *gvar = &gvar_overrides[i];
 
-		if (0 == strcmp(name, gvar->name)) {
+		if (0 == strcmp(name, gvar->name))
 			return gvar;
-		}
 	}
 	return NULL;
 }
