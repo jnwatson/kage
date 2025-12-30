@@ -2,13 +2,13 @@
 #ifndef __KAGE_OBJDESC_H
 #define __KAGE_OBJDESC_H
 
-#include <linux/kage.h>
 #include <linux/kage_objdescriptor.h>
 
-void *kage_obj_get(struct kage *kage, u64 descriptor, u16 type);
-void kage_obj_set(struct kage *kage, u64 descriptor, void *obj);
-void kage_obj_delete(struct kage *kage, u64 descriptor);
-u64 kage_objstorage_alloc(struct kage *kage, bool is_global,
-			  u16 type, void * obj);
+#define KAGE_OBJ_TYPE_FILE 1
+#define KAGE_OBJ_TYPE_DEV 2
+#define KAGE_OBJ_TYPE_CLASS 3
+#define KAGE_OBJ_TYPE_DEBUG_DIR 4
+#define KAGE_OBJ_TYPE_DEBUG_FILE 5
+#define KAGE_OBJ_TYPE_WAKEUP_SOURCE 6
 
 #endif /* __KAGE_OBJDESC_H */

@@ -24,7 +24,7 @@
 #include "runtime.h"
 #include "proc.h"
 #include "guards.h"
-#include "objdesc.h"
+//#include "objdesc.h"
 
 // DEBUG
 #pragma clang optimize off
@@ -119,7 +119,19 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 			kage->alloc_bitmap);
 	}
 
-	pgprot_t prot = PAGE_KERNEL;
+	pgprot_t prot;
+
+#if 0
+	// nic tmp FIXME test this change!!!
+
+	if (mod_mem_type_is_text(type)) {
+		prot = __pgprot(pgprot_val(PAGE_KERNEL) & ~PTE_PXN & ~PTE_UXN);
+		pr_err("KAGE: Allocating text. prot=0x%llx (PAGE_KERNEL=0x%llx)\n",
+			pgprot_val(prot), pgprot_val(PAGE_KERNEL));
+	} else 
+	// END OF CHANGE
+#endif
+		prot = PAGE_KERNEL;
 
 	/* Map pages into VM area */
 	err = vmap_pages_range_noflush(start, end, prot, tmp_pages,
@@ -617,6 +629,7 @@ static int __init kagemodule_init(void)
 	unsigned long vmalloc_start_addr, vmalloc_end_addr, vmalloc_size_bytes;
 	int err;
 	do_linktime_assertions();
+	kage_guards_init();
 
 	/* Initialize context */
 	init_debugfs();
@@ -766,10 +779,12 @@ int kage_post_relocation(struct kage *kage,
                     unsigned int num_syms,
                     const char *strtab)
 {
+	pr_info("%s started\n", __func__);
 	fill_trampolines(kage);
 	int err = protect_trampolines(kage);
 	if (err)
 		return err;
+	pr_info("%s finished with no error\n", __func__);
 	return 0;
 }
 

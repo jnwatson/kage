@@ -103,4 +103,7 @@ unsigned long kage_call(struct kage *kage, void * fn, unsigned long p0,
 unsigned long kage_symbol_value(struct kage *, const char *name, 
 				unsigned long target_func);
 
+void *kage_obj_get(struct kage *kage, u64 descriptor, u16 type);
+u64 kage_objstorage_alloc(struct kage *kage, bool is_global, u16 type, void * obj);
+
 #endif /* _LINUX_KAGE_H */
