@@ -79,6 +79,8 @@ lfi_ret:
 	ldp x19, x20, [sp], 16
 	ret
 
+	brk #0
+
 /* This is used for the host to call into the guest from a new run context */
 // lfi_asm_invoke(Proc* p, void* fn, void** kstackp, void **sstackp)
 .globl lfi_asm_invoke
@@ -281,7 +283,7 @@ lfi_syscall_entry_variadic:
 	mov   x15, #KAGE_MAX_STACK_ARGS_SIZE
 	cmp   x20, x15
 	csel  x20, x20, x15, lo
-	
+
 	mov x22, x17  // preserve kage_g2h_call
 
 	// Make space on the host stack

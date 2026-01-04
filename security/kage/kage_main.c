@@ -99,7 +99,7 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 	struct page **tmp_pages;
 
 
-	/* Track pages allocated to undo the allocation on failure */
+	// Track pages allocated to undo the allocation on failure
 	tmp_pages = kmalloc_array(nr_pages, sizeof(*tmp_pages), GFP_KERNEL);
 	if (!tmp_pages) {
 		pr_err(MODULE_NAME ": kmalloc_array failed\n");
@@ -121,24 +121,17 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 
 	pgprot_t prot;
 
-#if 0
-	// nic tmp FIXME test this change!!!
-
-	if (mod_mem_type_is_text(type)) {
+	if (0 && mod_mem_type_is_text(type)) {
 		prot = __pgprot(pgprot_val(PAGE_KERNEL) & ~PTE_PXN & ~PTE_UXN);
-		pr_err("KAGE: Allocating text. prot=0x%llx (PAGE_KERNEL=0x%llx)\n",
+		pr_info("KAGE: Allocating text. prot=0x%llx (PAGE_KERNEL=0x%llx)\n",
 			pgprot_val(prot), pgprot_val(PAGE_KERNEL));
-	} else 
-	// END OF CHANGE
-#endif
+	} else {
 		prot = PAGE_KERNEL;
+	}
 
-	/* Map pages into VM area */
+	// Map pages into VM area
 	err = vmap_pages_range_noflush(start, end, prot, tmp_pages,
 				       PAGE_SHIFT);
-// Nic tmp
-	flush_cache_vmap(start, end);
-
 	if (err) {
 		pr_err(MODULE_NAME
 		       ": vmap_pages_range_noflush failed with %pe\n",
@@ -146,6 +139,9 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 		ret = NULL;
 		goto free_pages;
 	}
+
+	// See comment of __vmap_pages_range_noflush ("The caller is...")
+	flush_cache_vmap(start, end);
 
 	if (end - kage->base > kage->next_open_memory_offs)
 		kage->next_open_memory_offs = end - kage->base + PAGE_SIZE;

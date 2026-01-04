@@ -18,6 +18,10 @@ FUNC_PROTO objects contain a property 'ret_type_id' and array property 'params'
 that contain the name and type information for the function's return value and
 parameters, respectively.
 
+Note: this utility is obsolete now that Kage uses runtime BTF information.  
+Preserving this for potential future use cases of running Kage on non-BTF-enabled
+kernels.
+
 E.g.
 {
   "types": [
