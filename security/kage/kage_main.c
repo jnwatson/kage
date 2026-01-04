@@ -119,15 +119,8 @@ static void *kage_memory_alloc_explicit(struct kage *kage, unsigned long start,
 			kage->alloc_bitmap);
 	}
 
-	pgprot_t prot;
-
-	if (0 && mod_mem_type_is_text(type)) {
-		prot = __pgprot(pgprot_val(PAGE_KERNEL) & ~PTE_PXN & ~PTE_UXN);
-		pr_info("KAGE: Allocating text. prot=0x%llx (PAGE_KERNEL=0x%llx)\n",
-			pgprot_val(prot), pgprot_val(PAGE_KERNEL));
-	} else {
-		prot = PAGE_KERNEL;
-	}
+	pgprot_t prot = 
+		mod_mem_type_is_text(type) ? PAGE_KERNEL_EXEC : PAGE_KERNEL;
 
 	// Map pages into VM area
 	err = vmap_pages_range_noflush(start, end, prot, tmp_pages,
