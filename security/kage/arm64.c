@@ -4,7 +4,7 @@
 
 #include "proc.h"
 
-uint64_t *lfi_regs_arg(kage_regs *regs, int arg)
+unsigned long *lfi_regs_arg(kage_regs *regs, int arg)
 {
 	BUG_ON(arg>=8);
 	return &regs->x[arg];
@@ -15,7 +15,7 @@ void wr_regs_base(kage_regs *regs, uint64_t val)
 	regs->x[27] = val;
 }
 // These are the registers that must be limited to the guest's range
-uint64_t *regs_addr(kage_regs *regs, int n)
+unsigned long *regs_addr(kage_regs *regs, int n)
 {
 	switch (n) {
 	case 0:
@@ -30,11 +30,9 @@ uint64_t *regs_addr(kage_regs *regs, int n)
 	return NULL;
 }
 
-void regs_init(kage_regs *regs, uint64_t entry, uint64_t sp, uint64_t ssp)
+void regs_init(kage_regs *regs, unsigned long lr, unsigned long sp, unsigned long ssp)
 {
 	regs->x[18] = ssp;
-	regs->x[30] = entry;
+	regs->x[30] = lr;
 	regs->sp = sp;
-
 }
-
