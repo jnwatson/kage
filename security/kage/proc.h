@@ -1,35 +1,35 @@
 #ifndef _KAGE_PROC_H
 #define _KAGE_PROC_H
 
+#include <linux/kage_asm.h>
 #include <linux/types.h>
 
-typedef struct kage_regs {
-	uint64_t x[31];
-	uint64_t sp;
-	uint64_t _pad;
-} kage_regs;
-
-struct kage_proc;
+#ifndef __ASSEMBLY__
 
 struct kage;
+
+/* The guest's saved context */
+typedef struct {
+	uint64_t x[31];
+	uint64_t sp;
+} kage_regs;
+
 struct kage_proc {
-	void *kstackp;
-	void *sstackp;
+	unsigned long kstackp;
+	unsigned long sstackp;
 	struct kage *kage;
-	// void* tp;
 	kage_regs regs;
 };
 
-void lfi_proc_init(struct kage_proc *proc, struct kage *kage, uintptr_t entry,
-		   uintptr_t sp, uintptr_t ssp);
+void lfi_proc_init(struct kage_proc *proc, struct kage *kage, 
+		   unsigned long entry, unsigned long sp, unsigned long ssp);
 
-uint64_t lfi_proc_start(struct kage_proc *proc);
+unsigned long lfi_proc_invoke(struct kage_proc *proc, void *fn,
+			      void *exit_addr, unsigned long p0,
+			      unsigned long p1, unsigned long p2,
+			      unsigned long p3, unsigned long p4,
+			      unsigned long p5);
 
-void lfi_proc_free(struct kage_proc *proc);
-
-
-uint64_t lfi_proc_invoke(struct kage_proc *proc, void *fn, void *ret,
-                         uint64_t p0, uint64_t p1, uint64_t p2,
-                         uint64_t p3, uint64_t p4, uint64_t p5);
+#endif /* __ASSEMBLY__ */
 
 #endif /* _KAGE_PROC_H */
