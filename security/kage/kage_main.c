@@ -30,22 +30,25 @@
 #pragma clang optimize off
 
 static_assert(offsetof(struct kage_proc, kstackp) == KAGE_LFIPROC_KSTACKP_OFFS,
-	      "Inconsistency among proc.h and kage_asm.h");
+	      "Inconsistency between proc.h and kage_asm.h");
 static_assert(offsetof(struct kage_proc, sstackp) == KAGE_LFIPROC_SSTACKP_OFFS,
-	      "Inconsistency among proc.h and kage_asm.h");
+	      "Inconsistency between proc.h and kage_asm.h");
 static_assert(offsetof(struct kage_proc, kage) == KAGE_LFIPROC_KAGE_OFFS,
-	      "Inconsistency among proc.h and kage_asm.h");
+	      "Inconsistency between proc.h and kage_asm.h");
 static_assert(offsetof(struct kage_proc, regs) == KAGE_LFIPROC_REGS_OFFS,
-	      "Inconsistency among proc.h and kage_asm.h");
+	      "Inconsistency between proc.h and kage_asm.h");
+static_assert(offsetof(struct kage_proc, regs.sp) == KAGE_LFIPROC_REG_SP_OFFS,
+	      "Inconsistency between proc.h and kage_asm.h");
+
 static_assert(offsetof(struct kage_g2h_call, guard_func) ==
 			KAGE_G2H_CALL_GUARD_FUNC_OFFS,
-	      "Inconsistency among guards.h and kage_asm.h");
+	      "Inconsistency between guards.h and kage_asm.h");
 static_assert(offsetof(struct kage_g2h_call, guard_func2) ==
 			KAGE_G2H_CALL_GUARD_FUNC2_OFFS,
-	      "Inconsistency among guards.h and kage_asm.h");
+	      "Inconsistency between guards.h and kage_asm.h");
 static_assert(offsetof(struct kage_g2h_call, host_func) ==
 			KAGE_G2H_CALL_HOST_FUNC_OFFS,
-	      "Inconsistency among guards.h and kage_asm.h");
+	      "Inconsistency between guards.h and kage_asm.h");
 static_assert(KAGE_GUEST_STACK_ORDER <= THREAD_SIZE_ORDER + PAGE_SHIFT);
 
 // Size of the space reserved for *all* guests
@@ -770,6 +773,7 @@ int kage_post_relocation(struct kage *kage,
 {
 	pr_info("%s started\n", __func__);
 	fill_trampolines(kage);
+	BUG_ON(kage->exit_addr - kage->base > KAGE_GUEST_SIZE);
 	int err = protect_trampolines(kage);
 	if (err)
 		return err;
@@ -881,7 +885,7 @@ unsigned long kage_call(struct kage *kage, void * fn,
 			guest_shadow_stack_end - 1);
 
 	// Shadow stacks grow up, so initialize ssp to the lowest address
-	lfi_proc_init(lfiproc, kage, (unsigned long)fn, guest_stack_end,
+	lfi_proc_init(lfiproc, kage, (unsigned long)kage->exit_addr, guest_stack_end,
 		      (unsigned long)guest_shadow_stack);
 
 	// Mark the proc data read only
@@ -893,8 +897,7 @@ unsigned long kage_call(struct kage *kage, void * fn,
 		goto cleanup;
 	}
 
-	rv = lfi_proc_invoke(lfiproc, fn, (void *)(kage->exit_addr),
-			     p0, p1, p2, p3, p4, p5);
+	rv = lfi_proc_invoke(lfiproc, (unsigned long)fn, p0, p1, p2, p3, p4, p5);
 
 	pr_info("%s to 0x%lx finished\n", __func__, (unsigned long)fn);
 cleanup:

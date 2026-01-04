@@ -69,7 +69,9 @@ lfi_ret:
 	// restore kernel stack from kage_proc.kstackp
 	ldr x22, [x27, #KAGE_LFIPROC_KSTACKP_OFFS]
 	mov sp, x22
+#ifdef CONFIG_SHADOW_CALL_STACK
 	ldr x18, [x27, #KAGE_LFIPROC_SSTACKP_OFFS]
+#endif
 	// restore callee-saved registers
 	ldp x29, x30, [sp], 16
 	ldp x27, x28, [sp], 16
@@ -82,9 +84,13 @@ lfi_ret:
 	brk #0
 
 /* This is used for the host to call into the guest from a new run context */
-// lfi_asm_invoke(Proc* p, void* fn, void** kstackp, void **sstackp)
+// lfi_asm_invoke(Proc* p, void* fn, unsigned long p0-p5)
 .globl lfi_asm_invoke
 lfi_asm_invoke:
+	// x0 -> proc
+	// x1 -> guest entry point
+	// x2-x7 -> parameters to guest function
+
 	// save callee-saved registers to stack
 	stp x19, x20, [sp, #-16]!
 	stp x21, x22, [sp, #-16]!
@@ -92,14 +98,39 @@ lfi_asm_invoke:
 	stp x25, x26, [sp, #-16]!
 	stp x27, x28, [sp, #-16]!
 	stp x29, x30, [sp, #-16]!
-	// save stack to kstackp
-	mov x22, x1
-	mov x4, sp
-	str x4, [x2] // *3rd param = $sp
-	// save shadow stack to sstackp
-	str x18, [x3] // *4th param = x18
-	RESTORE_INVOKE_REGS
-	br x22
+
+	// save kstack to proc->kstackp
+	mov x16, sp
+	str x16, [x0, #KAGE_LFIPROC_KSTACKP_OFFS]
+
+#ifdef CONFIG_SHADOW_CALL_STACK
+	// save host shadow stack to proc->sstackp
+	str x18, [x0, #KAGE_LFIPROC_SSTACKP_OFFS]
+	// set guest shadow stack
+	ldr x18, [x0, #KAGE_LFIPROC_REG_X_OFFS(18)]
+#endif
+	// set guest base
+	ldr x27, [x0, #KAGE_LFIPROC_REG_X_OFFS(27)]
+
+	// set guest LR (return address)
+	ldr x30, [x0, #KAGE_LFIPROC_REG_X_OFFS(30)]
+
+	// set guest stack
+	ldr x16, [x0, #KAGE_LFIPROC_REG_SP_OFFS]
+	mov sp, x16
+
+
+	mov x16, x1
+
+	// Shift guest function parameters left 2 spots
+	mov x0, x2
+	mov x1, x3
+	mov x2, x4
+	mov x3, x5
+	mov x4, x6
+	mov x5, x7
+
+	br x16
 	brk #0
 
 // Restore only caller-saved registers.
@@ -208,8 +239,10 @@ lfi_syscall_entry:
 	ldr x16, [x27, KAGE_LFIPROC_KSTACKP_OFFS]
 	mov sp, x16
 
+#ifdef CONFIG_SHADOW_CALL_STACK
 	// x18 (shadow stack) = proc->sstackp
 	ldr x18, [x27, KAGE_LFIPROC_SSTACKP_OFFS]
+#endif
 
 	mov x0, x27 // 1st arg: proc ptr
 	mov x1, x17 // 2nd arg: kage_g2h_call ptr
