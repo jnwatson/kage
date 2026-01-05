@@ -8,13 +8,16 @@
 
 #define MODULE_NAME "kage"
 
-/* == offsetof(struct LFIProc, regs) */
-#define KAGE_LFIPROC_KSTACKP_OFFS 0
-#define KAGE_LFIPROC_SSTACKP_OFFS 8
-#define KAGE_LFIPROC_KAGE_OFFS 16
-#define KAGE_LFIPROC_REGS_OFFS 24
-#define KAGE_LFIPROC_REG_X_OFFS(x_) (KAGE_LFIPROC_REGS_OFFS + (x_) * 8)
-#define KAGE_LFIPROC_REG_SP_OFFS (KAGE_LFIPROC_REGS_OFFS + 32 * 8)
+/* offsetof(struct LFIProc, kstackp) */
+#define KAGE_PROC_KSTACKP_OFFS 0
+/* offsetof(struct LFIProc, sstackp) */
+#define KAGE_PROC_SSTACKP_OFFS 8
+/* offsetof(struct LFIProc, kage) */
+#define KAGE_PROC_KAGE_OFFS 16
+/* offsetof(struct LFIProc, regs) */
+#define KAGE_PROC_REGS_OFFS 24
+#define KAGE_PROC_REG_X_OFFS(x_) (KAGE_PROC_REGS_OFFS + (x_) * 8)
+#define KAGE_PROC_REG_SP_OFFS (KAGE_PROC_REGS_OFFS + 31 * 8)
 #define KAGE_G2H_CALL_GUARD_FUNC_OFFS 8
 #define KAGE_G2H_CALL_GUARD_FUNC2_OFFS 16
 #define KAGE_G2H_CALL_HOST_FUNC_OFFS 32

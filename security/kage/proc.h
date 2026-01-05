@@ -9,16 +9,16 @@
 struct kage;
 
 /* The guest's saved context */
-typedef struct {
-	unsigned long x[32];
+struct kage_regs {
+	unsigned long x[31];
 	unsigned long sp;
-} kage_regs;
+};
 
 struct kage_proc {
 	unsigned long kstackp; // host's saved stack
 	unsigned long sstackp; // host's saved SCS
 	struct kage *kage;
-	kage_regs regs; // guest's saved registers
+	struct kage_regs regs; // guest's saved registers
 };
 
 void lfi_proc_init(struct kage_proc *proc, struct kage *kage, 
