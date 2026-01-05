@@ -18,34 +18,34 @@
 // save caller-saved registers, assuming sandbox syspage is x27
 .macro SAVE_PARTIAL_REGS
 	GET_PROC
-	stp x0, x1,   [x27, KAGE_LFIPROC_REG_X_OFFS(0)]
-	stp x2, x3,   [x27, KAGE_LFIPROC_REG_X_OFFS(2)]
-	stp x4, x5,   [x27, KAGE_LFIPROC_REG_X_OFFS(4)]
-	stp x6, x7,   [x27, KAGE_LFIPROC_REG_X_OFFS(6)]
-	stp x8, x9,   [x27, KAGE_LFIPROC_REG_X_OFFS(8)]
-	stp x10, x11, [x27, KAGE_LFIPROC_REG_X_OFFS(10)]
-	stp x12, x13, [x27, KAGE_LFIPROC_REG_X_OFFS(12)]
-	stp x14, x15, [x27, KAGE_LFIPROC_REG_X_OFFS(14)]
-	stp x16, x17, [x27, KAGE_LFIPROC_REG_X_OFFS(16)]
-	str x18,      [x27, KAGE_LFIPROC_REG_X_OFFS(18)]
+	stp x0, x1,   [x27, KAGE_PROC_REG_X_OFFS(0)]
+	stp x2, x3,   [x27, KAGE_PROC_REG_X_OFFS(2)]
+	stp x4, x5,   [x27, KAGE_PROC_REG_X_OFFS(4)]
+	stp x6, x7,   [x27, KAGE_PROC_REG_X_OFFS(6)]
+	stp x8, x9,   [x27, KAGE_PROC_REG_X_OFFS(8)]
+	stp x10, x11, [x27, KAGE_PROC_REG_X_OFFS(10)]
+	stp x12, x13, [x27, KAGE_PROC_REG_X_OFFS(12)]
+	stp x14, x15, [x27, KAGE_PROC_REG_X_OFFS(14)]
+	stp x16, x17, [x27, KAGE_PROC_REG_X_OFFS(16)]
+	str x18,      [x27, KAGE_PROC_REG_X_OFFS(18)]
 	mov x1, sp
-	stp x30, x1,  [x27, KAGE_LFIPROC_REG_X_OFFS(30)]
+	stp x30, x1,  [x27, KAGE_PROC_REG_X_OFFS(30)]
 .endm
 
 .macro RESTORE_INVOKE_REGS
-	ldp x2, x3,   [x0, KAGE_LFIPROC_REG_X_OFFS(2)]
-	ldp x4, x5,   [x0, KAGE_LFIPROC_REG_X_OFFS(4)]
-	ldp x6, x7,   [x0, KAGE_LFIPROC_REG_X_OFFS(6)]
-	ldp x8, x9,   [x0, KAGE_LFIPROC_REG_X_OFFS(8)]
-	ldp x10, x11, [x0, KAGE_LFIPROC_REG_X_OFFS(10)]
-	ldp x12, x13, [x0, KAGE_LFIPROC_REG_X_OFFS(12)]
-	ldp x14, x15, [x0, KAGE_LFIPROC_REG_X_OFFS(14)]
-	ldp x16, x17, [x0, KAGE_LFIPROC_REG_X_OFFS(16)]
-	ldr x18,      [x0, KAGE_LFIPROC_REG_X_OFFS(18)]
-	ldr x27,      [x0, KAGE_LFIPROC_REG_X_OFFS(27)]
-	ldp x30, x1,  [x0, KAGE_LFIPROC_REG_X_OFFS(30)]
+	ldp x2, x3,   [x0, KAGE_PROC_REG_X_OFFS(2)]
+	ldp x4, x5,   [x0, KAGE_PROC_REG_X_OFFS(4)]
+	ldp x6, x7,   [x0, KAGE_PROC_REG_X_OFFS(6)]
+	ldp x8, x9,   [x0, KAGE_PROC_REG_X_OFFS(8)]
+	ldp x10, x11, [x0, KAGE_PROC_REG_X_OFFS(10)]
+	ldp x12, x13, [x0, KAGE_PROC_REG_X_OFFS(12)]
+	ldp x14, x15, [x0, KAGE_PROC_REG_X_OFFS(14)]
+	ldp x16, x17, [x0, KAGE_PROC_REG_X_OFFS(16)]
+	ldr x18,      [x0, KAGE_PROC_REG_X_OFFS(18)]
+	ldr x27,      [x0, KAGE_PROC_REG_X_OFFS(27)]
+	ldp x30, x1,  [x0, KAGE_PROC_REG_X_OFFS(30)]
 	mov sp, x1
-	ldp x0, x1,   [x0, KAGE_LFIPROC_REG_X_OFFS(0)]
+	ldp x0, x1,   [x0, KAGE_PROC_REG_X_OFFS(0)]
 .endm
 
 /* This trampoline is executed in the guest to return from a function called by the
@@ -67,10 +67,10 @@ do_ret_end:
 lfi_ret:
 	GET_PROC
 	// restore kernel stack from kage_proc.kstackp
-	ldr x22, [x27, #KAGE_LFIPROC_KSTACKP_OFFS]
+	ldr x22, [x27, #KAGE_PROC_KSTACKP_OFFS]
 	mov sp, x22
 #ifdef CONFIG_SHADOW_CALL_STACK
-	ldr x18, [x27, #KAGE_LFIPROC_SSTACKP_OFFS]
+	ldr x18, [x27, #KAGE_PROC_SSTACKP_OFFS]
 #endif
 	// restore callee-saved registers
 	ldp x29, x30, [sp], 16
@@ -101,22 +101,22 @@ lfi_asm_invoke:
 
 	// save kstack to proc->kstackp
 	mov x16, sp
-	str x16, [x0, #KAGE_LFIPROC_KSTACKP_OFFS]
+	str x16, [x0, #KAGE_PROC_KSTACKP_OFFS]
 
 #ifdef CONFIG_SHADOW_CALL_STACK
 	// save host shadow stack to proc->sstackp
-	str x18, [x0, #KAGE_LFIPROC_SSTACKP_OFFS]
+	str x18, [x0, #KAGE_PROC_SSTACKP_OFFS]
 	// set guest shadow stack
-	ldr x18, [x0, #KAGE_LFIPROC_REG_X_OFFS(18)]
+	ldr x18, [x0, #KAGE_PROC_REG_X_OFFS(18)]
 #endif
 	// set guest base
-	ldr x27, [x0, #KAGE_LFIPROC_REG_X_OFFS(27)]
+	ldr x27, [x0, #KAGE_PROC_REG_X_OFFS(27)]
 
 	// set guest LR (return address)
-	ldr x30, [x0, #KAGE_LFIPROC_REG_X_OFFS(30)]
+	ldr x30, [x0, #KAGE_PROC_REG_X_OFFS(30)]
 
 	// set guest stack
-	ldr x16, [x0, #KAGE_LFIPROC_REG_SP_OFFS]
+	ldr x16, [x0, #KAGE_PROC_REG_SP_OFFS]
 	mov sp, x16
 
 
@@ -136,19 +136,19 @@ lfi_asm_invoke:
 // Restore only caller-saved registers.
 .globl lfi_restore_partial_regs
 lfi_restore_partial_regs:
-	ldp x2, x3,   [x0, KAGE_LFIPROC_REG_X_OFFS(2)]
-	ldp x4, x5,   [x0, KAGE_LFIPROC_REG_X_OFFS(4)]
-	ldp x6, x7,   [x0, KAGE_LFIPROC_REG_X_OFFS(6)]
-	ldp x8, x9,   [x0, KAGE_LFIPROC_REG_X_OFFS(8)]
-	ldp x10, x11, [x0, KAGE_LFIPROC_REG_X_OFFS(10)]
-	ldp x12, x13, [x0, KAGE_LFIPROC_REG_X_OFFS(12)]
-	ldp x14, x15, [x0, KAGE_LFIPROC_REG_X_OFFS(14)]
-	ldp x16, x17, [x0, KAGE_LFIPROC_REG_X_OFFS(16)]
-	ldr x18,      [x0, KAGE_LFIPROC_REG_X_OFFS(18)]
-	ldr x27,      [x0, KAGE_LFIPROC_REG_X_OFFS(27)]
-	ldp x30, x1,  [x0, KAGE_LFIPROC_REG_X_OFFS(30)]
+	ldp x2, x3,   [x0, KAGE_PROC_REG_X_OFFS(2)]
+	ldp x4, x5,   [x0, KAGE_PROC_REG_X_OFFS(4)]
+	ldp x6, x7,   [x0, KAGE_PROC_REG_X_OFFS(6)]
+	ldp x8, x9,   [x0, KAGE_PROC_REG_X_OFFS(8)]
+	ldp x10, x11, [x0, KAGE_PROC_REG_X_OFFS(10)]
+	ldp x12, x13, [x0, KAGE_PROC_REG_X_OFFS(12)]
+	ldp x14, x15, [x0, KAGE_PROC_REG_X_OFFS(14)]
+	ldp x16, x17, [x0, KAGE_PROC_REG_X_OFFS(16)]
+	ldr x18,      [x0, KAGE_PROC_REG_X_OFFS(18)]
+	ldr x27,      [x0, KAGE_PROC_REG_X_OFFS(27)]
+	ldp x30, x1,  [x0, KAGE_PROC_REG_X_OFFS(30)]
 	mov sp, x1
-	ldp x0, x1,   [x0, KAGE_LFIPROC_REG_X_OFFS(0)]
+	ldp x0, x1,   [x0, KAGE_PROC_REG_X_OFFS(0)]
 	add x30, x27, w30, uxtw
 	ret
 
@@ -158,23 +158,23 @@ lfi_restore_partial_regs:
 .p2align 4
 .globl lfi_restore_regs
 lfi_restore_regs:
-	ldp x2, x3,   [x0, KAGE_LFIPROC_REG_X_OFFS(2)]
-	ldp x4, x5,   [x0, KAGE_LFIPROC_REG_X_OFFS(4)]
-	ldp x6, x7,   [x0, KAGE_LFIPROC_REG_X_OFFS(6)]
-	ldp x8, x9,   [x0, KAGE_LFIPROC_REG_X_OFFS(8)]
-	ldp x10, x11, [x0, KAGE_LFIPROC_REG_X_OFFS(10)]
-	ldp x12, x13, [x0, KAGE_LFIPROC_REG_X_OFFS(12)]
-	ldp x14, x15, [x0, KAGE_LFIPROC_REG_X_OFFS(14)]
-	ldp x16, x17, [x0, KAGE_LFIPROC_REG_X_OFFS(16)]
-	ldp x18, x19, [x0, KAGE_LFIPROC_REG_X_OFFS(18)]
-	ldp x20, x21, [x0, KAGE_LFIPROC_REG_X_OFFS(20)]
-	ldp x22, x23, [x0, KAGE_LFIPROC_REG_X_OFFS(22)]
-	ldp x24, x25, [x0, KAGE_LFIPROC_REG_X_OFFS(24)]
-	ldp x26, x27, [x0, KAGE_LFIPROC_REG_X_OFFS(26)]
-	ldp x28, x29, [x0, KAGE_LFIPROC_REG_X_OFFS(28)]
-	ldp x30, x1,  [x0, KAGE_LFIPROC_REG_X_OFFS(30)]
+	ldp x2, x3,   [x0, KAGE_PROC_REG_X_OFFS(2)]
+	ldp x4, x5,   [x0, KAGE_PROC_REG_X_OFFS(4)]
+	ldp x6, x7,   [x0, KAGE_PROC_REG_X_OFFS(6)]
+	ldp x8, x9,   [x0, KAGE_PROC_REG_X_OFFS(8)]
+	ldp x10, x11, [x0, KAGE_PROC_REG_X_OFFS(10)]
+	ldp x12, x13, [x0, KAGE_PROC_REG_X_OFFS(12)]
+	ldp x14, x15, [x0, KAGE_PROC_REG_X_OFFS(14)]
+	ldp x16, x17, [x0, KAGE_PROC_REG_X_OFFS(16)]
+	ldp x18, x19, [x0, KAGE_PROC_REG_X_OFFS(18)]
+	ldp x20, x21, [x0, KAGE_PROC_REG_X_OFFS(20)]
+	ldp x22, x23, [x0, KAGE_PROC_REG_X_OFFS(22)]
+	ldp x24, x25, [x0, KAGE_PROC_REG_X_OFFS(24)]
+	ldp x26, x27, [x0, KAGE_PROC_REG_X_OFFS(26)]
+	ldp x28, x29, [x0, KAGE_PROC_REG_X_OFFS(28)]
+	ldp x30, x1,  [x0, KAGE_PROC_REG_X_OFFS(30)]
 	mov sp, x1
-	ldp x0, x1,   [x0, KAGE_LFIPROC_REG_X_OFFS(0)]
+	ldp x0, x1,   [x0, KAGE_PROC_REG_X_OFFS(0)]
 	add x30, x27, w30, uxtw
 	ret
 	brk #0
@@ -236,12 +236,12 @@ lfi_syscall_entry:
 	SAVE_PARTIAL_REGS
 	// struct kage_proc *proc == x27 now
 	// sp = proc->kstackp
-	ldr x16, [x27, KAGE_LFIPROC_KSTACKP_OFFS]
+	ldr x16, [x27, KAGE_PROC_KSTACKP_OFFS]
 	mov sp, x16
 
 #ifdef CONFIG_SHADOW_CALL_STACK
 	// x18 (shadow stack) = proc->sstackp
-	ldr x18, [x27, KAGE_LFIPROC_SSTACKP_OFFS]
+	ldr x18, [x27, KAGE_PROC_SSTACKP_OFFS]
 #endif
 
 	mov x0, x27 // 1st arg: proc ptr
@@ -249,7 +249,7 @@ lfi_syscall_entry:
 	ldr x17, [x17, KAGE_G2H_CALL_GUARD_FUNC_OFFS]
 	blr x17 // Call guard function
 	// proc->regs[0] = return value from guard func
-	str x0, [x27, KAGE_LFIPROC_REG_X_OFFS(0)]
+	str x0, [x27, KAGE_PROC_REG_X_OFFS(0)]
 	mov x0, x27 // x0 = proc
 	b  lfi_restore_partial_regs // head back to guest
 	brk #0
@@ -264,11 +264,11 @@ lfi_syscall_entry_override:
 	// struct kage_proc *proc == x27 now
 
 	// sp = proc->kstackp
-	ldr x16, [x27, KAGE_LFIPROC_KSTACKP_OFFS]
+	ldr x16, [x27, KAGE_PROC_KSTACKP_OFFS]
 	mov sp, x16
 
 	// x18 (shadow stack) = proc->sstackp
-	ldr x18, [x27, KAGE_LFIPROC_SSTACKP_OFFS]
+	ldr x18, [x27, KAGE_PROC_SSTACKP_OFFS]
 
 	/* Shift the argument registers to the right so kage param is first */
 	mov x7, x6
@@ -283,7 +283,7 @@ lfi_syscall_entry_override:
 
 	blr x17 // Call guard function
 	// proc->regs[0] = return value from guard func
-	str x0, [x27, KAGE_LFIPROC_REGS_OFFS+16*0]
+	str x0, [x27, KAGE_PROC_REGS_OFFS+16*0]
 	mov x0, x27 // kage_proc * into x0
 	b  lfi_restore_partial_regs
 	brk #0
@@ -294,9 +294,9 @@ lfi_syscall_entry_variadic:
 	SAVE_PARTIAL_REGS
 	// FIXME: would be slightly more optimal to group two of these, e.g.
 	// x20 -> x23
-	str x19,      [x27, KAGE_LFIPROC_REG_X_OFFS(19)]
-	str x20,      [x27, KAGE_LFIPROC_REG_X_OFFS(20)]
-	str x22,      [x27, KAGE_LFIPROC_REG_X_OFFS(22)]
+	str x19,      [x27, KAGE_PROC_REG_X_OFFS(19)]
+	str x20,      [x27, KAGE_PROC_REG_X_OFFS(20)]
+	str x22,      [x27, KAGE_PROC_REG_X_OFFS(22)]
 	// x27 now contains kage_proc*
 	// x1 still contains guest sp
 
@@ -329,7 +329,7 @@ lfi_syscall_entry_variadic:
 
 	// Switch to the host stack and shadow stack
 	mov   sp, x0    // memcpy returns dest in x0
-	ldr   x18, [x27, #KAGE_LFIPROC_SSTACKP_OFFS]
+	ldr   x18, [x27, #KAGE_PROC_SSTACKP_OFFS]
 
 	// Call guard func 1 (guard_sig_precall)
 	mov x0, x27   // kage_proc* is 1st parameter
@@ -340,10 +340,10 @@ lfi_syscall_entry_variadic:
 	b.ne 0f   // don't call host function if guard fails
 
 	// Call the host function
-	ldp x0, x1,   [x27, KAGE_LFIPROC_REG_X_OFFS(0)]
-	ldp x2, x3,   [x27, KAGE_LFIPROC_REG_X_OFFS(2)]
-	ldp x4, x5,   [x27, KAGE_LFIPROC_REG_X_OFFS(4)]
-	ldp x6, x7,   [x27, KAGE_LFIPROC_REG_X_OFFS(6)]
+	ldp x0, x1,   [x27, KAGE_PROC_REG_X_OFFS(0)]
+	ldp x2, x3,   [x27, KAGE_PROC_REG_X_OFFS(2)]
+	ldp x4, x5,   [x27, KAGE_PROC_REG_X_OFFS(4)]
+	ldp x6, x7,   [x27, KAGE_PROC_REG_X_OFFS(6)]
 	ldr x15, [x22, KAGE_G2H_CALL_HOST_FUNC_OFFS]
 	blr x15
 
@@ -354,11 +354,11 @@ lfi_syscall_entry_variadic:
 	ldr x15, [x22, #KAGE_G2H_CALL_GUARD_FUNC2_OFFS]
 	bl guard_sig_postcall
 
-	0: 
-	str x0, [x27, KAGE_LFIPROC_REG_X_OFFS(0)] // Save return value
+	0:
+	str x0, [x27, KAGE_PROC_REG_X_OFFS(0)] // Save return value
 
 	// Copy arguments back to guest stack
-	ldr   x0, [x27, KAGE_LFIPROC_REG_X_OFFS(31)] // dest: original guest sp
+	ldr   x0, [x27, KAGE_PROC_REG_X_OFFS(31)] // dest: original guest sp
 	mov   x1, sp    // src: current (host) sp
         mov   x2, x20   // size
 	bl    memcpy
@@ -366,8 +366,8 @@ lfi_syscall_entry_variadic:
 	// Cleanup
 	add sp, sp, x20  // Restore the stack
 	mov x0, x27 // kage_proc* into x0 for the return path
-	ldr x19,      [x0, KAGE_LFIPROC_REG_X_OFFS(19)]
-	ldr x20,      [x0, KAGE_LFIPROC_REG_X_OFFS(20)]
-	ldr x22,      [x0, KAGE_LFIPROC_REG_X_OFFS(22)]
+	ldr x19,      [x0, KAGE_PROC_REG_X_OFFS(19)]
+	ldr x20,      [x0, KAGE_PROC_REG_X_OFFS(20)]
+	ldr x22,      [x0, KAGE_PROC_REG_X_OFFS(22)]
 	b  lfi_restore_partial_regs
 	brk #0

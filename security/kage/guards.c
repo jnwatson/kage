@@ -14,7 +14,6 @@
 #include "runtime.h"
 #include "proc.h"
 #include "guards.h"
-#include "objdesc.h"
 #include "arm64.h"
 #include "funcsig.h"
 
@@ -133,7 +132,7 @@ on_err:
 int guard_sig_precall(struct kage_proc *proc, struct kage_g2h_call *host_call)
 {
 	struct kage_argspec *spec = host_call->spec;
-	kage_regs *regs = &proc->regs;
+	struct kage_regs *regs = &proc->regs;
 	int regnum = 0;
 	u64 val;
 
@@ -241,7 +240,7 @@ u64 guard_sig_postcall(struct kage_proc *proc, struct kage_g2h_call *host_call,
 /* Guards and calls a host call using just its signature */
 u64 guard_sig(struct kage_proc *proc, struct kage_g2h_call *host_call)
 {
-	kage_regs *regs = &proc->regs;
+	struct kage_regs *regs = &proc->regs;
 	u64 rv;
 	u64 (*host_func)(u64 p0, u64 p1, u64 p2, u64 p3, u64 p4, u64 p5);
 

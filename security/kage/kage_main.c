@@ -29,15 +29,15 @@
 // DEBUG
 #pragma clang optimize off
 
-static_assert(offsetof(struct kage_proc, kstackp) == KAGE_LFIPROC_KSTACKP_OFFS,
+static_assert(offsetof(struct kage_proc, kstackp) == KAGE_PROC_KSTACKP_OFFS,
 	      "Inconsistency between proc.h and kage_asm.h");
-static_assert(offsetof(struct kage_proc, sstackp) == KAGE_LFIPROC_SSTACKP_OFFS,
+static_assert(offsetof(struct kage_proc, sstackp) == KAGE_PROC_SSTACKP_OFFS,
 	      "Inconsistency between proc.h and kage_asm.h");
-static_assert(offsetof(struct kage_proc, kage) == KAGE_LFIPROC_KAGE_OFFS,
+static_assert(offsetof(struct kage_proc, kage) == KAGE_PROC_KAGE_OFFS,
 	      "Inconsistency between proc.h and kage_asm.h");
-static_assert(offsetof(struct kage_proc, regs) == KAGE_LFIPROC_REGS_OFFS,
+static_assert(offsetof(struct kage_proc, regs) == KAGE_PROC_REGS_OFFS,
 	      "Inconsistency between proc.h and kage_asm.h");
-static_assert(offsetof(struct kage_proc, regs.sp) == KAGE_LFIPROC_REG_SP_OFFS,
+static_assert(offsetof(struct kage_proc, regs.sp) == KAGE_PROC_REG_SP_OFFS,
 	      "Inconsistency between proc.h and kage_asm.h");
 
 static_assert(offsetof(struct kage_g2h_call, guard_func) ==
