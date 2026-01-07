@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
- * These functions sit outside the LFI sandbox and allow the sandbox to make
- * function calls into the kernel
- */
+ * These functions sit outside the LFI sandbox and guard host function calls
+ * made by the guests */
 #include <linux/assoc_array.h>
 #include <linux/err.h>
 #include <linux/printk.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
+#include <linux/device.h>
 
 #include <linux/kage.h>
 
@@ -17,10 +17,64 @@
 #include "arm64.h"
 #include "funcsig.h"
 
-// DEBUG
-#pragma clang optimize off
+// Nic tmp
+//#pragma clang optimize off 
 
-static unsigned long guard_kmalloc_trace(struct kage_proc *proc,
+struct res_t{
+	struct kage *kage;
+	void * mem;
+};
+
+static void devm_free(void *vres)
+{
+	struct res_t *res = vres;
+	kage_memory_free(res->kage, res->mem);
+	kfree(vres);
+}
+
+void *guard_devm_kmalloc(struct kage_proc *proc, struct kage_g2h_call * call, unsigned long odev, size_t size, 
+		   gfp_t gfp)
+{
+	// Verify odev
+	if ((odev - proc->kage->base) < KAGE_GUEST_SIZE) {
+		pr_err(MODULE_NAME ": Invalid dev pointer passed to devm_kmalloc\n");
+		return 0;
+	}
+	BUG_ON((call->spec[1].kind) != KAGE_ARG_PSTRUCT);
+	u16 dev_type_id = call->spec[1].spec.obj_type_id;
+
+	if (unlikely(!size))
+		return ZERO_SIZE_PTR; // FIXME
+
+	struct device * dev = kage_obj_get(proc->kage, odev, dev_type_id);
+	if (!dev) {
+		pr_err(MODULE_NAME
+		       ": invalid dev ptr in arg 0 in call to devm_kalloc\n");
+	}
+
+	void * resmem = kmalloc(sizeof(struct res_t), GFP_KERNEL);
+	if (unlikely(!resmem))
+		return NULL;
+	void *mem = kage_memory_alloc(proc->kage, size, MOD_DATA, gfp);
+	if (unlikely(!mem)) {
+		kfree(resmem);
+		return NULL;
+	}
+	struct res_t * res = resmem;
+	res->kage = proc->kage;
+	res->mem = mem;
+
+	int rv = devm_add_action(dev, devm_free, res);
+	if (unlikely(rv)) {
+		kfree(resmem);
+		kage_memory_free(proc->kage, mem);
+		return NULL;
+	}
+	return mem;
+}
+// FIXME: need corresponding realloc, free
+
+static unsigned long guard_kmalloc_trace(struct kage_proc *proc, struct kage_g2h_call *call, 
 					 struct kmem_cache *s, gfp_t flags,
 					 size_t size)
 {
@@ -134,7 +188,7 @@ int guard_sig_precall(struct kage_proc *proc, struct kage_g2h_call *host_call)
 	struct kage_argspec *spec = host_call->spec;
 	struct kage_regs *regs = &proc->regs;
 	int regnum = 0;
-	u64 val;
+	unsigned long val;
 
 	// Skip the return value
 	spec++;
@@ -151,7 +205,7 @@ int guard_sig_precall(struct kage_proc *proc, struct kage_g2h_call *host_call)
 			    (val - proc->kage->base) >= KAGE_GUEST_SIZE) {
 				pr_err(MODULE_NAME
 				       ": invalid ptr argument %d value of "
-                                       "0x%llx in call to %s\n",
+                                       "0x%lx in call to %s\n",
 				       regnum + 1, val, host_call->name);
 				return -1;
 			}
@@ -205,7 +259,7 @@ u64 guard_sig_postcall(struct kage_proc *proc, struct kage_g2h_call *host_call,
 			return rv;
 		if ((rv - proc->kage->base) >= KAGE_GUEST_SIZE) {
 			pr_err(MODULE_NAME
-			       ": out-of-guest pointer return value of %llx returned in call to%s\n",
+			       ": out-of-guest pointer return value of %llx returned in call to %s\n",
 			       rv, host_call->name);
 			return -1;
 		}
@@ -263,18 +317,21 @@ u64 guard_sig(struct kage_proc *proc, struct kage_g2h_call *host_call)
 
 /* Guards for which the default guard_sig won't work (probably because
  * it is a kmalloc variant)
- * NOTE: this array should be sorted by name (so bsearch works) */
+ * NOTE: this array must be sorted by name (so bsearch works) */
 struct kage_g2h_call g2h_call_overrides[] = {
+	NAME_TO_GUARD_ENTRY(devm_kmalloc),
 	NAME_TO_GUARD_ENTRY(kmalloc_trace),
 };
 
 void kage_guards_init(void) {
-	g2h_call_overrides[0].stub = (unsigned long)lfi_syscall_entry_override;
+	for (int i = 0; i < ARRAY_SIZE(g2h_call_overrides); i++)
+		g2h_call_overrides[i].stub = (unsigned long)lfi_syscall_entry_override;
 }
+
 static struct kage_g2h_call *find_g2h_call_override(const char *name)
 {
 	unsigned int i;
-
+	// FIXME: bsearch
 	for (i = 0; i < ARRAY_SIZE(g2h_call_overrides); i++) {
 		struct kage_g2h_call *call = &g2h_call_overrides[i];
 
@@ -296,7 +353,6 @@ struct kage_g2h_call *kage_guard_create_g2h_call(const char *name,
 	if (over_call) {
 		*call = *over_call;
 		call->host_func = target_func;
-		return call;
 	}
 
 	call->spec = kage_get_funcspec(name);
@@ -304,6 +360,9 @@ struct kage_g2h_call *kage_guard_create_g2h_call(const char *name,
 		kfree(call);
 		return ERR_PTR(-ENOKEY);
 	}
+
+	if (over_call)
+		return call;
 
 	// Check if the last argument is variadic
 	struct kage_argspec *last_arg = call->spec;

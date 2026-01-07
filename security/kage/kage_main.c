@@ -24,7 +24,6 @@
 #include "runtime.h"
 #include "proc.h"
 #include "guards.h"
-//#include "objdesc.h"
 
 // DEBUG
 #pragma clang optimize off

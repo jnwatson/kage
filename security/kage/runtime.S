@@ -28,8 +28,8 @@
 	stp x14, x15, [x27, KAGE_PROC_REG_X_OFFS(14)]
 	stp x16, x17, [x27, KAGE_PROC_REG_X_OFFS(16)]
 	str x18,      [x27, KAGE_PROC_REG_X_OFFS(18)]
-	mov x1, sp
-	stp x30, x1,  [x27, KAGE_PROC_REG_X_OFFS(30)]
+	mov x16, sp
+	stp x30, x16,  [x27, KAGE_PROC_REG_X_OFFS(30)]
 .endm
 
 .macro RESTORE_INVOKE_REGS
@@ -260,6 +260,7 @@ lfi_syscall_entry:
  */
 .globl lfi_syscall_entry_override
 lfi_syscall_entry_override:
+	// FIXME: do we really need to save here (and restore later)?  We trust the host, right?
 	SAVE_PARTIAL_REGS
 	// struct kage_proc *proc == x27 now
 
@@ -270,14 +271,16 @@ lfi_syscall_entry_override:
 	// x18 (shadow stack) = proc->sstackp
 	ldr x18, [x27, KAGE_PROC_SSTACKP_OFFS]
 
-	/* Shift the argument registers to the right so kage param is first */
-	mov x7, x6
-	mov x6, x5
-	mov x5, x4
-	mov x4, x3
-	mov x3, x2
-	mov x2, x1
-	mov x1, x0
+	/* Shift the argument registers to the right so kage, 
+	 * kage_g2h_call params are first */
+	mov x8, x6
+	mov x7, x5
+	mov x6, x4
+	mov x5, x3
+	mov x4, x2
+	mov x3, x1
+	mov x2, x0
+	mov x1, x17 // Move kage_g2h_call * into second argument
 	mov x0, x27 // Move kage_proc * into first argument
 	ldr x17, [x17, KAGE_G2H_CALL_GUARD_FUNC_OFFS]
 
@@ -291,6 +294,7 @@ lfi_syscall_entry_override:
 /* Precondition: x17 == struct kage_g2h_call *. */
 .globl lfi_syscall_entry_variadic
 lfi_syscall_entry_variadic:
+        // FIXME:  another one where we really don't need to save regs
 	SAVE_PARTIAL_REGS
 	// FIXME: would be slightly more optimal to group two of these, e.g.
 	// x20 -> x23
@@ -298,7 +302,7 @@ lfi_syscall_entry_variadic:
 	str x20,      [x27, KAGE_PROC_REG_X_OFFS(20)]
 	str x22,      [x27, KAGE_PROC_REG_X_OFFS(22)]
 	// x27 now contains kage_proc*
-	// x1 still contains guest sp
+	mov x1, sp
 
 	// Copy Guest Stack Arguments to Host Stack
 
