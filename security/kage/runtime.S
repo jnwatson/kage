@@ -12,7 +12,7 @@
     // Clear the lower 13 bits to get the base address of the *next* 8KiB block
     and   x16, x16, ~(KAGE_GUEST_STACK_SIZE-1)
     // Load proc from the first bytes past the stack (in "proc data")
-    ldr   x27, [x16] 
+    ldr   x27, [x16]
 .endm
 
 // save caller-saved registers, assuming sandbox syspage is x27
