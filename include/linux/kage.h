@@ -7,6 +7,7 @@
 #include <linux/assoc_array.h>
 #include <linux/kage_asm.h>
 #include <linux/kage_objdescriptor.h>
+#include <linux/elf.h>
 
 #define KAGE_GUEST_SIZE (4UL * 1024 * 1024 * 1024)
 
@@ -77,33 +78,34 @@ struct kage {
 
 	struct assoc_array closures;
 
-        /* Stores mapping of opaque references to addresses of struct 
+        /* Stores mapping of opaque references to addresses of struct
          * pointers */
 	struct kage_objstorage *objstorage;
 	u8 owner_id; // Used in objstorage to constrain access to objects
 };
 
-void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type, gfp_t flags);
+void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type,
+			gfp_t flags);
 void kage_memory_free(struct kage *kage, void *vaddr);
 void kage_memory_free_all(struct kage *kage);
 struct kage *kage_create(const char *modname);
 void kage_destroy(struct kage *kage);
-int kage_post_relocation(struct kage *kage, 
-			const Elf_Shdr *sechdrs,
-                        unsigned int shnum,
-                        const Elf_Sym *symtab,
-                        unsigned int num_syms,
-                        const char *strtab);
+int kage_post_relocation(struct kage *kage, const Elf_Shdr *sechdrs,
+			 unsigned int shnum, const Elf_Sym *symtab,
+			 unsigned int num_syms, const char *strtab);
 
 // Calls a function in the guest and returns the result
-unsigned long kage_call(struct kage *kage, void * fn, unsigned long p0, 
-                   unsigned long p1, unsigned long p2, unsigned long p3, 
-                   unsigned long p4, unsigned long p5);
+unsigned long kage_call(struct kage *kage, void * fn, unsigned long p0,
+			unsigned long p1, unsigned long p2, unsigned long p3,
+			unsigned long p4, unsigned long p5);
 
-unsigned long kage_symbol_value(struct kage *, const char *name, 
-				unsigned long target_func);
+unsigned long kage_symbol_value(struct kage *kage, const char *name,
+				unsigned long target_func,
+				const Elf_Ehdr *hdr, const Elf_Shdr *alt_shdr,
+				unsigned int sym_index);
 
 void *kage_obj_get(struct kage *kage, u64 descriptor, u16 type);
-u64 kage_objstorage_alloc(struct kage *kage, bool is_global, u16 type, void * obj);
+u64 kage_objstorage_alloc(struct kage *kage, bool is_global, u16 type,
+			  void * obj);
 
 #endif /* _LINUX_KAGE_H */

@@ -1418,6 +1418,7 @@ static bool ignore_undef_symbol(Elf_Half emachine, const char *name)
 	return false;
 }
 
+
 /* Change all symbols so that st_value encodes the pointer directly. */
 static int simplify_symbols(struct module *mod, const struct load_info *info)
 {
@@ -1427,6 +1428,22 @@ static int simplify_symbols(struct module *mod, const struct load_info *info)
 	unsigned int i;
 	int ret = 0;
 	const struct kernel_symbol *ksym;
+#ifdef CONFIG_SECURITY_KAGE
+	unsigned int alt_sec_idx = 0;
+	const Elf_Shdr *alt_shdr = NULL;
+
+	if (info->is_lfi) {
+		alt_sec_idx = find_sec(info, ".altinstructions");
+		if (alt_sec_idx)
+			for (i = 1; i < info->hdr->e_shnum; i++) {
+				const Elf_Shdr *shdr = &info->sechdrs[i];
+				if (shdr->sh_info == alt_sec_idx) {
+					alt_shdr = shdr;
+					break;
+				}
+			}
+	}
+#endif
 
 	for (i = 1; i < symsec->sh_size / sizeof(Elf_Sym); i++) {
 		const char *name = info->strtab + sym[i].st_name;
@@ -1464,16 +1481,19 @@ static int simplify_symbols(struct module *mod, const struct load_info *info)
 
 #ifdef CONFIG_SECURITY_KAGE
 				if (info->is_lfi) {
-					sym[i].st_value = 
-			kage_symbol_value(mod->kage, 
-					  kernel_symbol_name(ksym),
-					  kernel_symbol_value(ksym));
+					const char *sname =
+						kernel_symbol_name(ksym);
+					unsigned long sval =
+						kernel_symbol_value(ksym);
+			sym[i].st_value = kage_symbol_value(mod->kage, sname,
+							    sval, info->hdr,
+							    alt_shdr, i);
 					if (!sym[i].st_value) {
 						ret = -EINVAL;
 						break;
 					}
 				}
-				else 
+				else
 #endif
 			sym[i].st_value = kernel_symbol_value(ksym);
 				break;
@@ -2398,7 +2418,7 @@ out_enomem:
 			module_memory_free(mod->mem[t].base, t);
 		}
 #ifdef CONFIG_SECURITY_KAGE
-	} 
+	}
 	else {
 		kage_memory_free_all(kage);
 	}
@@ -2568,11 +2588,11 @@ static int post_relocation(struct module *mod, const struct load_info *info)
 #ifdef CONFIG_SECURITY_KAGE
 	if (info->is_lfi) {
 		const Elf_Shdr *symtab_shdr = &info->sechdrs[info->index.sym];
-		const Elf_Sym *syms = 
+		const Elf_Sym *syms =
 			((void *)info->hdr + symtab_shdr->sh_offset);
 		const char *strtab = ((void *)info->hdr +
 				      info->sechdrs[info->index.str].sh_offset);
-		const unsigned int num_syms = 
+		const unsigned int num_syms =
 			symtab_shdr->sh_size / sizeof(Elf_Sym);
 
 		int err = kage_post_relocation(mod->kage, info->sechdrs,
