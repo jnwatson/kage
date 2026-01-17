@@ -588,10 +588,10 @@ struct module {
 	struct _ddebug_info dyndbg_info;
 #endif
 #ifdef CONFIG_SECURITY_KAGE
-	struct kage *kage;
+	ANDROID_KABI_USE(1, struct kage *kage);
+#else
+	ANDROID_KABI_RESERVE(1);
 #endif
-
-	ANDROID_KABI_RESERVE(1); // FIXME: should I delete or elseif? (since added *kage)
 	ANDROID_KABI_RESERVE(2);
 	ANDROID_KABI_RESERVE(3);
 	ANDROID_KABI_RESERVE(4);
