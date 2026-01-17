@@ -4,9 +4,6 @@
 #include <linux/printk.h>
 #include "funcsig.h"
 
-// DEBUG
-#pragma clang optimize off
-
 /**
  * resolve_typedef() - Traverse BTF type modifiers and typedefs.
  * @btf: The BTF blob for the kernel or module.
@@ -52,6 +49,7 @@ static bool resolve_type(const struct btf *btf, __u32 type_id,
 
 	switch (btf_kind(t)) {
 	case BTF_KIND_INT:
+	case BTF_KIND_ENUM:
 		spec->kind = KAGE_ARG_INT;
 		spec->spec.int_size = t->size;
 		break;
