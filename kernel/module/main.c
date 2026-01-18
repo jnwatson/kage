@@ -2345,11 +2345,14 @@ static int move_module(struct module *mod, struct load_info *info)
 #ifdef CONFIG_SECURITY_KAGE
 		if (!kage) {
 #endif
-		        ptr = module_memory_alloc(mod->mem[type].size, type);
+			ptr = module_memory_alloc(mod->mem[type].size, type);
 #ifdef CONFIG_SECURITY_KAGE
 		}
 		else {
-		        ptr = kage_memory_alloc(kage, mod->mem[type].size, type, GFP_KERNEL);
+			ptr = kage_memory_alloc(kage, mod->mem[type].size, type,
+						GFP_KERNEL);
+			if (type == MOD_TEXT)
+				pr_info("Allocated text at 0x%p\n", ptr);
 		}
 #endif
 		/*
@@ -2373,7 +2376,7 @@ static int move_module(struct module *mod, struct load_info *info)
 	}
 
 	/* Transfer each section which specifies SHF_ALLOC */
-	pr_debug("Final section addresses for %s:\n", mod->name);
+	pr_info("Final section addresses for %s:\n", mod->name);
 	for (i = 0; i < info->hdr->e_shnum; i++) {
 		void *dest;
 		Elf_Shdr *shdr = &info->sechdrs[i];
@@ -2405,7 +2408,7 @@ static int move_module(struct module *mod, struct load_info *info)
 		 * minted official memory area.
 		 */
 		shdr->sh_addr = (unsigned long)dest;
-		pr_debug("\t0x%lx 0x%.8lx %s\n", (long)shdr->sh_addr,
+		pr_info("\t0x%lx 0x%.8lx %s\n", (long)shdr->sh_addr,
 			 (long)shdr->sh_size, info->secstrings + shdr->sh_name);
 	}
 
@@ -2572,6 +2575,22 @@ int __weak module_finalize(const Elf_Ehdr *hdr,
 	return 0;
 }
 
+#ifdef CONFIG_SECURITY_KAGE
+static int post_relocation_kage(struct module *mod, 
+				const struct load_info *info)
+{
+	const Elf_Shdr *symtab_shdr = &info->sechdrs[info->index.sym];
+	const Elf_Sym *syms = ((void *)info->hdr + symtab_shdr->sh_offset);
+	const char *strtab = ((void *)info->hdr +
+			      info->sechdrs[info->index.str].sh_offset);
+	const unsigned int num_syms = symtab_shdr->sh_size / sizeof(Elf_Sym);
+
+	return kage_post_relocation(mod->kage, mod, info->sechdrs,
+				    info->hdr->e_shnum, syms,
+				    num_syms, strtab);
+}
+#endif
+
 static int post_relocation(struct module *mod, const struct load_info *info)
 {
 	/* Sort exception table now relocations are done. */
@@ -2584,20 +2603,10 @@ static int post_relocation(struct module *mod, const struct load_info *info)
 	/* Setup kallsyms-specific fields. */
 	add_kallsyms(mod, info);
 
-	// FIXME: this is where LFI verification should go
+	// FIXME: LFI verification here
 #ifdef CONFIG_SECURITY_KAGE
 	if (info->is_lfi) {
-		const Elf_Shdr *symtab_shdr = &info->sechdrs[info->index.sym];
-		const Elf_Sym *syms =
-			((void *)info->hdr + symtab_shdr->sh_offset);
-		const char *strtab = ((void *)info->hdr +
-				      info->sechdrs[info->index.str].sh_offset);
-		const unsigned int num_syms =
-			symtab_shdr->sh_size / sizeof(Elf_Sym);
-
-		int err = kage_post_relocation(mod->kage, info->sechdrs,
-					       info->hdr->e_shnum, syms,
-					       num_syms, strtab);
+		int err = post_relocation_kage(mod, info);
 		if (err < 0)
 			return err;
 	}

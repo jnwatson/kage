@@ -18,6 +18,9 @@
 #include <linux/vmalloc.h>
 #include <linux/elf.h>
 #include <asm-generic/module.h>
+#ifdef CONFIG_KUNIT
+#include <kunit/test.h>
+#endif
 
 #include <asm/cacheflush.h>
 #include <asm/pgtable.h>
@@ -27,9 +30,6 @@
 #include "runtime.h"
 #include "proc.h"
 #include "guards.h"
-
-// DEBUG
-#pragma clang optimize off
 
 static_assert(offsetof(struct kage_proc, kstackp) == KAGE_PROC_KSTACKP_OFFS,
 	      "Inconsistency between proc.h and kage_asm.h");
@@ -240,8 +240,7 @@ on_err:
 
 struct g2h_tramp_data_entry {
 	const struct kage_g2h_call *call;
-	unsigned long trampoline; // points to lfi_syscall_entry FIXME change to target or
-			// something
+	unsigned long stub; // points to lfi_syscall_entry{,_override}
 };
 
 static_assert(sizeof(struct g2h_tramp_data_entry)==KAGE_G2H_TRAMP_SIZE);
@@ -283,7 +282,7 @@ static void fill_trampolines(struct kage *kage)
 	for (i=0; i<kage->num_g2h_calls; i++) {
 		struct kage_g2h_call * host_call = kage->g2h_calls[i];
 		entry[i].call = host_call;
-		entry[i].trampoline = host_call->stub;
+		entry[i].stub = host_call->stub;
 	}
 	left = (unsigned long)kage->g2h_tramp_data + KAGE_G2H_TRAMP_REGION_SIZE
 			- (unsigned long)(&entry[i]);
@@ -328,7 +327,6 @@ static bool is_referenced_by_alt(const Elf_Ehdr *hdr, const Elf_Shdr *alt_shdr,
 {
 	if (!alt_shdr)
 		return false;
-
 
 #ifdef CONFIG_MODULES_USE_ELF_REL
 	if (alt_shdr->sh_type == SHT_REL) {
@@ -389,8 +387,8 @@ unsigned long kage_symbol_value(struct kage *kage, const char *name,
 		       ": exceeded max external call sites from guest\n");
 		return 0;
 	}
-	struct kage_g2h_call *host_call = kage_guard_create_g2h_call(name,
-								     target_func);
+	struct kage_g2h_call *host_call =
+			kage_guard_create_g2h_call(name, target_func);
 	if (IS_ERR(host_call)) {
 		pr_err(MODULE_NAME
 		       ": error %pe creating host call %s\n", host_call, name);
@@ -402,6 +400,124 @@ unsigned long kage_symbol_value(struct kage *kage, const char *name,
 	pr_info(MODULE_NAME ": kage_symbol_value %s=%lx\n", name, ret);
 	return ret;
 }
+
+static struct kage_h2g_tramp_data_entry *alloc_h2g_entry(struct kage *kage)
+{
+	if (kage->num_h2g_calls >= KAGE_MAX_H2G_CALLS)
+		return NULL;
+
+	return &kage->h2g_tramp_data[kage->num_h2g_calls++];
+}
+
+static unsigned long get_key_chunk(const void *index_key, int level)
+{
+	return ((unsigned long)index_key >>
+		(level * ASSOC_ARRAY_KEY_CHUNK_SIZE)) &
+	       (ASSOC_ARRAY_KEY_CHUNK_SIZE - 1);
+}
+
+static unsigned long get_h2g_key_chunk(const void *object, int level)
+{
+	struct kage_h2g_tramp_data_entry *entry =
+		(struct kage_h2g_tramp_data_entry *)object;
+
+	// indexing on the guest_func pointer
+	const unsigned long index_key = entry->guest_func;
+
+	return get_key_chunk((void *)index_key, level);
+}
+
+static bool kage_h2g_compare_object(const void *object, const void *index_key)
+{
+	const struct kage_h2g_tramp_data_entry *entry = object;
+
+	return entry->guest_func == (unsigned long)index_key;
+}
+
+static int kage_h2g_diff_objects(const void *object, const void *index_key)
+{
+	const struct kage_h2g_tramp_data_entry *entry = object;
+	unsigned long k1 = entry->guest_func;
+	unsigned long k2 = (unsigned long)index_key;
+
+	if (k1 == k2)
+		return -1;
+	return __ffs(k1 ^ k2);
+}
+
+static const struct assoc_array_ops kage_h2g_closure_ops = {
+	.get_key_chunk = get_key_chunk,
+	.get_object_key_chunk = get_h2g_key_chunk,
+	.compare_object = kage_h2g_compare_object,
+	.diff_objects = kage_h2g_diff_objects,
+};
+
+void *kage_get_closure_over(struct kage *kage, unsigned long func)
+{
+	unsigned long irq_flags;
+	struct assoc_array_edit *edit;
+	void *tramp;
+	struct kage_h2g_tramp_data_entry *entry;
+
+	if ((func - kage->base) >= KAGE_GUEST_SIZE) {
+		return ERR_PTR(-EINVAL);
+	}
+
+	spin_lock_irqsave(&kage->lock, irq_flags);
+	tramp = assoc_array_find(&kage->closures, &kage_h2g_closure_ops,
+				 (void *)func);
+	if (tramp)
+		goto finish;
+
+	entry = alloc_h2g_entry(kage);
+	if (!entry) {
+		tramp = ERR_PTR(-ENOMEM);
+		goto on_err;
+	}
+
+	entry->kage = kage;
+	entry->guest_func = func;
+
+	// Each trampoline is exactly region size away from its literal pool
+	tramp = (void *)((u64)entry - KAGE_H2G_TRAMP_REGION_SIZE);
+
+	edit = assoc_array_insert(&kage->closures, &kage_h2g_closure_ops,
+				  (void *)func, tramp);
+	if (IS_ERR(edit)) {
+		tramp = edit;
+		goto on_err;
+	}
+	assoc_array_apply_edit(edit);
+finish:
+on_err:
+	spin_unlock_irqrestore(&kage->lock, irq_flags);
+	return tramp;
+}
+EXPORT_SYMBOL(kage_get_closure_over);
+
+#ifdef CONFIG_KUNIT
+void kage_prepare_kunit_suites(struct module *mod)
+{
+	if (!mod->kage || !mod->kunit_suites)
+		return;
+
+	unsigned int i;
+	struct kunit_suite *suite;
+	struct kunit_case *test_case;
+
+	for (i = 0; i < mod->num_kunit_suites; i++) {
+		suite = mod->kunit_suites[i];
+		kunit_suite_for_each_test_case(suite, test_case) {
+			 void *guest_func = (void *)test_case->run_case;
+			 void *tramp = kage_get_closure_over(mod->kage, (unsigned long)guest_func);
+			 if (!IS_ERR(tramp)) {
+				 test_case->run_case = tramp;
+			 }
+		}
+	}
+}
+EXPORT_SYMBOL(kage_prepare_kunit_suites);
+#endif
 
 static int alloc_gvar_space(struct kage *kage) {
 	void * mem = kage_memory_alloc(kage, KAGE_GVAR_SPACE_SIZE, MOD_DATA,
@@ -453,7 +569,7 @@ objstorage_err:
 	return err;
 }
 
-void kage_memory_free(struct kage *kage, void *vaddr)
+void kage_memory_free(struct kage *kage, const void *vaddr)
 {
 	if (!vaddr)
 		return;
@@ -581,7 +697,7 @@ void *kage_obj_get(struct kage *kage, u64 descriptor, u16 type)
 		storage = kage->objstorage;
 
 	void * rv = rcu_dereference(storage->objs[objindex]);
-	pr_info("%s: %llx(%x, %4u, %x) -> 0x%px\n", __func__,
+	pr_debug("%s: %llx(%x, %4u, %x) -> 0x%p\n", __func__,
 		descriptor, owner, obj_type, objindex, rv);
 
 	return rv;
@@ -602,7 +718,7 @@ void kage_obj_set(struct kage *kage, u64 descriptor, void *obj)
 
 	rcu_assign_pointer(storage->objs[objindex], obj);
 	u16 obj_type = kage_unpack_objdescriptor_type(descriptor);
-	pr_info("%s: %llx(%x, %4u, %x) -> 0x%px\n", __func__,
+	pr_debug("%s: %llx(%x, %4u, %x) -> 0x%px\n", __func__,
 		descriptor, owner, obj_type, objindex, obj);
 }
 
@@ -623,6 +739,7 @@ u64 kage_objstorage_alloc(struct kage *kage, bool is_global,
 
 	if (is_global) {
 		storage = kage_global_objstorage;
+                // FIXME: enforce ownership
 		owner = KAGE_OWNER_GLOBAL;
 	} else {
 		storage = kage->objstorage;
@@ -812,12 +929,10 @@ static int protect_trampolines(struct kage *kage)
 	return 0;
 }
 
-int kage_post_relocation(struct kage *kage,
-		    const Elf_Shdr *sechdrs,
-                    unsigned int shnum,
-                    const Elf_Sym *symtab,
-                    unsigned int num_syms,
-                    const char *strtab)
+int kage_post_relocation(struct kage *kage, struct module *mod,
+			 const Elf_Shdr *sechdrs, unsigned int shnum,
+			 const Elf_Sym *symtab, unsigned int num_syms,
+			 const char *strtab)
 {
 	pr_info("%s started\n", __func__);
 	fill_trampolines(kage);
@@ -825,6 +940,11 @@ int kage_post_relocation(struct kage *kage,
 	int err = protect_trampolines(kage);
 	if (err)
 		return err;
+
+#ifdef CONFIG_KUNIT
+	kage_prepare_kunit_suites(mod);
+#endif
+
 	pr_info("%s finished with no error\n", __func__);
 	return 0;
 }
@@ -927,7 +1047,7 @@ unsigned long kage_call(struct kage *kage, void * fn,
 	unsigned long guest_shadow_stack_end =
 			(unsigned long)guest_shadow_stack + SCS_SIZE;
 
-	pr_info("guest stack at %px-%lx\n", guest_stack, guest_stack_end - 1);
+	pr_info("fn call 0x%px guest stack at %px-%lx\n", fn, guest_stack, guest_stack_end - 1);
 	if (guest_shadow_stack)
 		pr_info("guest scs   at %px-%lx\n", guest_shadow_stack,
 			guest_shadow_stack_end - 1);

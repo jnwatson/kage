@@ -31,9 +31,19 @@ static void devm_free(void *vres)
 	kage_memory_free(res->kage, res->mem);
 	kfree(vres);
 }
+static void guard_kfree(struct kage_proc *proc, 
+			struct kage_g2h_call * call, 
+			const void *object)
+{
+	if (((unsigned long)(object) - proc->kage->base) < KAGE_GUEST_SIZE) {
+		pr_err(MODULE_NAME ": Invalid pointer passed to kfree\n");
+	}
+	kage_memory_free(proc->kage, object);
+}
 
-void *guard_devm_kmalloc(struct kage_proc *proc, struct kage_g2h_call * call, unsigned long odev, size_t size, 
-		   gfp_t gfp)
+static void *guard_devm_kmalloc(struct kage_proc *proc, 
+				struct kage_g2h_call * call, unsigned long odev, 
+				size_t size, gfp_t gfp)
 {
 	// Verify odev
 	if ((odev - proc->kage->base) < KAGE_GUEST_SIZE) {
@@ -74,7 +84,8 @@ void *guard_devm_kmalloc(struct kage_proc *proc, struct kage_g2h_call * call, un
 }
 // FIXME: need corresponding realloc, free
 
-static unsigned long guard_kmalloc_trace(struct kage_proc *proc, struct kage_g2h_call *call, 
+static unsigned long guard_kmalloc_trace(struct kage_proc *proc, 
+					 struct kage_g2h_call *call, 
 					 struct kmem_cache *s, gfp_t flags,
 					 size_t size)
 {
@@ -82,108 +93,9 @@ static unsigned long guard_kmalloc_trace(struct kage_proc *proc, struct kage_g2h
 						flags);
 }
 
-/* Resides in h2g_tramp_data; corresponding trampoline precedes this by
- * KAGE_H2G_TRAMP_REGION_SIZE bytes */
-struct h2g_tramp_data_entry {
-	struct kage *kage;
-	u64 guest_func; // callback into guest
-};
-static_assert(sizeof(struct h2g_tramp_data_entry) == KAGE_H2G_TRAMP_SIZE);
-
-// Returns the next slot in the literal pool
-// Note that the kage->lock should be held when calling
-static struct kage_h2g_tramp_data_entry *alloc_h2g_entry(struct kage *kage)
-{
-	struct kage_h2g_tramp_data_entry *ret;
-
-	if (kage->num_h2g_calls >= KAGE_MAX_H2G_CALLS)
-		return NULL;
-
-	ret = &kage->h2g_tramp_data[kage->num_h2g_calls++];
-
-	return ret;
-}
-
-static unsigned long get_key_chunk(const void *index_key, int level)
-{
-	return ((unsigned long)index_key >>
-		(level * ASSOC_ARRAY_KEY_CHUNK_SIZE)) &
-	       (ASSOC_ARRAY_KEY_CHUNK_SIZE - 1);
-}
-
-static unsigned long get_h2g_key_chunk(const void *object, int level)
-{
-	struct kage_h2g_tramp_data_entry *entry =
-		(struct kage_h2g_tramp_data_entry *)object;
-
-	// indexing on the guest_func pointer
-	const unsigned long index_key = entry->guest_func;
-
-	return get_key_chunk((void *)index_key, level);
-}
-
-static const struct assoc_array_ops kage_h2g_closure_ops = {
-	.get_key_chunk = get_key_chunk,
-	.get_object_key_chunk = get_h2g_key_chunk,
-};
-
-/* Returns a closure over the guest function, capturing kage and the function
- * address.  The returned new function, when called, calls kage_call with the
- * first two arguments being kage and func.
- *
- * The associative array (aka dict) stores entry pointers indexed by the original
- * function, so if the guest uses the same callback twice (or just uses it in a
- * loop), it only allocates one closure.  The entry pointer is exactly
- * KAGE_H2G_TRAMP_REGION_SIZE ahead of the actual call site, since the entry is
- * the part of the literal pool that the call site uses.  The call site is
- * pointing to an instance of lfi_h2g_trampoline.
- * */
-static void *get_closure_over(struct kage *kage, unsigned long func)
-{
-	unsigned long irq_flags;
-	struct assoc_array_edit *edit;
-	void *tramp;
-	struct kage_h2g_tramp_data_entry *entry;
-
-	if ((func - kage->base) >= KAGE_GUEST_SIZE) {
-		return ERR_PTR(-EINVAL);
-	}
-
-	spin_lock_irqsave(&kage->lock, irq_flags);
-	tramp = assoc_array_find(&kage->closures, &kage_h2g_closure_ops,
-				 (void *)func);
-	if (tramp)
-		goto finish;
-
-	entry = alloc_h2g_entry(kage);
-	if (!entry) {
-		tramp = ERR_PTR(-ENOMEM);
-		goto on_err;
-	}
-
-	entry->kage = kage;
-	entry->guest_func = func;
-
-	// Each trampoline is exactly region size away from its literal pool
-	tramp = (void *)((u64)entry - KAGE_H2G_TRAMP_REGION_SIZE);
-
-	edit = assoc_array_insert(&kage->closures, &kage_h2g_closure_ops,
-				  (void *)func, tramp);
-	if (IS_ERR(edit)) {
-		tramp = edit;
-		goto on_err;
-	}
-	assoc_array_apply_edit(edit);
-finish:
-	pr_info("closure_over created at 0x%px for guest func 0x%lx", tramp,
-		func);
-on_err:
-	spin_unlock_irqrestore(&kage->lock, irq_flags);
-	return tramp;
-}
-
 /* Guards and calls a host call using its argument specification. */
-int guard_sig_precall(struct kage_proc *proc, struct kage_g2h_call *host_call)
+static int guard_sig_precall(struct kage_proc *proc, 
+			     struct kage_g2h_call *host_call)
 {
 	struct kage_argspec *spec = host_call->spec;
 	struct kage_regs *regs = &proc->regs;
@@ -211,9 +123,11 @@ int guard_sig_precall(struct kage_proc *proc, struct kage_g2h_call *host_call)
 			}
 			break;
 		case KAGE_ARG_FUNC_PTR: {
-			void *closure = get_closure_over(proc->kage, val);
+			void *closure = kage_get_closure_over(proc->kage, val);
 			if (IS_ERR(closure))
 				return PTR_ERR(closure);
+			pr_info("closure_over created at 0x%px for guest func "
+				"0x%lx (%s)", closure, val, host_call->name);
 
 			((u64 *)regs)[regnum] = (unsigned long)closure;
 			break;
@@ -321,11 +235,13 @@ u64 guard_sig(struct kage_proc *proc, struct kage_g2h_call *host_call)
 struct kage_g2h_call g2h_call_overrides[] = {
 	NAME_TO_GUARD_ENTRY(devm_kmalloc),
 	NAME_TO_GUARD_ENTRY(kmalloc_trace),
+	NAME_TO_GUARD_ENTRY(kfree),
 };
 
 void kage_guards_init(void) {
 	for (int i = 0; i < ARRAY_SIZE(g2h_call_overrides); i++)
-		g2h_call_overrides[i].stub = (unsigned long)lfi_syscall_entry_override;
+		g2h_call_overrides[i].stub = 
+				(unsigned long)lfi_syscall_entry_override;
 }
 
 static struct kage_g2h_call *find_g2h_call_override(const char *name)

@@ -86,13 +86,14 @@ struct kage {
 
 void *kage_memory_alloc(struct kage *kage, size_t size, enum mod_mem_type type,
 			gfp_t flags);
-void kage_memory_free(struct kage *kage, void *vaddr);
+void kage_memory_free(struct kage *kage, const void *vaddr);
 void kage_memory_free_all(struct kage *kage);
 struct kage *kage_create(const char *modname);
 void kage_destroy(struct kage *kage);
-int kage_post_relocation(struct kage *kage, const Elf_Shdr *sechdrs,
-			 unsigned int shnum, const Elf_Sym *symtab,
-			 unsigned int num_syms, const char *strtab);
+int kage_post_relocation(struct kage *kage, struct module *mod,
+			 const Elf_Shdr *sechdrs, unsigned int shnum,
+			 const Elf_Sym *symtab, unsigned int num_syms,
+			 const char *strtab);
 
 // Calls a function in the guest and returns the result
 unsigned long kage_call(struct kage *kage, void * fn, unsigned long p0,
@@ -103,6 +104,12 @@ unsigned long kage_symbol_value(struct kage *kage, const char *name,
 				unsigned long target_func,
 				const Elf_Ehdr *hdr, const Elf_Shdr *alt_shdr,
 				unsigned int sym_index);
+
+void *kage_get_closure_over(struct kage *kage, unsigned long func);
+
+#ifdef CONFIG_KUNIT
+void kage_prepare_kunit_suites(struct module *mod);
+#endif
 
 void *kage_obj_get(struct kage *kage, u64 descriptor, u16 type);
 u64 kage_objstorage_alloc(struct kage *kage, bool is_global, u16 type,
