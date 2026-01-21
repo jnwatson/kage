@@ -1418,6 +1418,26 @@ static bool ignore_undef_symbol(Elf_Half emachine, const char *name)
 	return false;
 }
 
+#ifdef CONFIG_SECURITY_KAGE
+static const Elf_Shdr *find_altinst_header(const struct load_info *info)
+{
+	unsigned int i;
+	const Elf_Shdr *alt_shdr = NULL;
+	unsigned int alt_sec_idx = find_sec(info, ".altinstructions");
+
+	if (!alt_sec_idx)
+		return NULL;
+
+	for (i = 1; i < info->hdr->e_shnum; i++) {
+		const Elf_Shdr *shdr = &info->sechdrs[i];
+		if (shdr->sh_info == alt_sec_idx) {
+			alt_shdr = shdr;
+			break;
+		}
+	}
+	return alt_shdr;
+}
+#endif
 
 /* Change all symbols so that st_value encodes the pointer directly. */
 static int simplify_symbols(struct module *mod, const struct load_info *info)
@@ -1429,20 +1449,7 @@ static int simplify_symbols(struct module *mod, const struct load_info *info)
 	int ret = 0;
 	const struct kernel_symbol *ksym;
 #ifdef CONFIG_SECURITY_KAGE
-	unsigned int alt_sec_idx = 0;
-	const Elf_Shdr *alt_shdr = NULL;
-
-	if (info->is_lfi) {
-		alt_sec_idx = find_sec(info, ".altinstructions");
-		if (alt_sec_idx)
-			for (i = 1; i < info->hdr->e_shnum; i++) {
-				const Elf_Shdr *shdr = &info->sechdrs[i];
-				if (shdr->sh_info == alt_sec_idx) {
-					alt_shdr = shdr;
-					break;
-				}
-			}
-	}
+	const Elf_Shdr *alt_shdr = find_altinst_header(info);
 #endif
 
 	for (i = 1; i < symsec->sh_size / sizeof(Elf_Sym); i++) {
