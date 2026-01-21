@@ -330,8 +330,8 @@ static bool is_referenced_by_alt(const Elf_Ehdr *hdr, const Elf_Shdr *alt_shdr,
 
 #ifdef CONFIG_MODULES_USE_ELF_REL
 	if (alt_shdr->sh_type == SHT_REL) {
-		Elf_Rel *rel = (void *)hdr + shdr->sh_offset;
-		unsigned int num_rels = shdr->sh_size / sizeof(Elf_Rel);
+		Elf_Rel *rel = (void *)hdr + alt_shdr->sh_offset;
+		unsigned int num_rels = alt_shdr->sh_size / sizeof(Elf_Rel);
 		unsigned int j;
 
 		for (j = 0; j < num_rels; j++) {
@@ -356,6 +356,23 @@ static bool is_referenced_by_alt(const Elf_Ehdr *hdr, const Elf_Shdr *alt_shdr,
 	return false;
 }
 
+static unsigned long alloc_load_tramp(struct kage *kage,
+				      unsigned long target_func)
+{
+	if (kage->num_load_tramps * KAGE_LOAD_TRAMP_SIZE >= PAGE_SIZE) {
+		pr_err("kage: out of load trampolines\n");
+		return 0;
+	}
+
+	void *tramp = kage->load_tramp_text +
+			kage->num_load_tramps * KAGE_LOAD_TRAMP_SIZE;
+	memcpy(tramp, &load_tramp, KAGE_LOAD_TRAMP_SIZE);
+	*(unsigned long *)(tramp + 8) = target_func;
+	kage->num_load_tramps++;
+
+	return (unsigned long)tramp;
+}
+
 /* Returns the absolute address in the guest of the trampoline for the target of
  * a guest's call of a function in the kernel or another module */
 unsigned long kage_symbol_value(struct kage *kage, const char *name,
@@ -365,9 +382,9 @@ unsigned long kage_symbol_value(struct kage *kage, const char *name,
 {
 	unsigned int i;
 
-        // If the reference is in .altinstructions, don't wrap in a trampoline
+        // If the reference is in .altinstructions, use a temporary trampoline
 	if (is_referenced_by_alt(hdr, alt_shdr, sym_index)) {
-		return target_func;
+		return alloc_load_tramp(kage, target_func);
 	}
 
 	for (i=0; i<kage->num_g2h_calls; i++) {
@@ -551,6 +568,15 @@ static int kage_init(struct kage *kage)
 		goto objstorage_err;
 
 	assoc_array_init(&kage->closures);
+
+	kage->load_tramp_text = kage_memory_alloc(kage, PAGE_SIZE, MOD_TEXT,
+						  GFP_KERNEL);
+	if (!kage->load_tramp_text) {
+		err = -ENOMEM;
+		goto load_tramp_err;
+	}
+	kage->num_load_tramps = 0;
+
 	err = alloc_trampolines(kage);
 	if (err)
 		goto tramp_err;
@@ -563,11 +589,31 @@ static int kage_init(struct kage *kage)
 gvar_err:
 	free_trampolines(kage);
 tramp_err:
+	kage_memory_free(kage, kage->load_tramp_text);
+load_tramp_err:
 	kfree(kage->objstorage);
 objstorage_err:
 	bitmap_free(kage->alloc_bitmap);
 	return err;
 }
+
+void kage_destroy_load_trampolines(struct kage *kage)
+{
+	if (!kage || !kage->load_tramp_text)
+		return;
+
+	set_memory_rw((unsigned long)kage->load_tramp_text, PAGE_SIZE >> PAGE_SHIFT);
+	kage_memory_free(kage, kage->load_tramp_text);
+	kage->load_tramp_text = NULL;
+	kage->num_load_tramps = 0;
+}
+EXPORT_SYMBOL(kage_destroy_load_trampolines);
+
+void kage_post_finalize(struct kage *kage)
+{
+	kage_destroy_load_trampolines(kage);
+}
+EXPORT_SYMBOL(kage_post_finalize);
 
 void kage_memory_free(struct kage *kage, const void *vaddr)
 {
@@ -607,19 +653,13 @@ void kage_memory_free_all(struct kage *kage)
 	unsigned long nr_pages = KAGE_GUEST_SIZE >> PAGE_SHIFT;
 	unsigned long i;
 
-	//pr_info("kmfa start");
 	for_each_set_bit(i, kage->alloc_bitmap, nr_pages) {
 		struct page *page;
 		unsigned long vaddr = kage->base + (i << PAGE_SHIFT);
 
 		page = vmalloc_to_page((const void *)vaddr);
-		if (page) {
+		if (page)
 			__free_page(page);
-			//pr_info("kmfa 0x%lx\n", vaddr);
-		}
-		//else
-		//	pr_info("kmfa !mp 0x%lx\n", vaddr);
-
 	}
 	bitmap_zero(kage->alloc_bitmap, nr_pages);
 	vunmap_range(kage->base, kage->base + KAGE_GUEST_SIZE);
@@ -863,9 +903,13 @@ static void unprotect_trampolines(struct kage *kage)
 			KAGE_G2H_TRAMP_REGION_SIZE },
 		{(unsigned long)kage->h2g_tramp_text,
 			KAGE_H2G_TRAMP_REGION_SIZE },
+		{(unsigned long)kage->load_tramp_text,
+			PAGE_SIZE },
 	};
 
 	for (int i=0; i<ARRAY_SIZE(parms); i++) {
+		if (!parms[i].text)
+			continue;
 		err = set_memory_rw(parms[i].text, parms[i].size >> PAGE_SHIFT);
 		if (err) {
 			pr_err(MODULE_NAME ": Failed to set trampoline text "
@@ -916,6 +960,11 @@ static int protect_trampolines(struct kage *kage)
 
 	err = set_memory_xonly((unsigned long)kage->h2g_tramp_text,
 			       KAGE_H2G_TRAMP_REGION_SIZE);
+	if (err)
+		return err;
+
+	err = set_memory_xonly((unsigned long)kage->load_tramp_text,
+			       PAGE_SIZE);
 	if (err)
 		return err;
 
@@ -1076,6 +1125,7 @@ cleanup:
 	return rv;
 }
 
+// FIXME: remove
 static ssize_t debugfs_trigger_write(struct file *debug_file_node,
 				     const char __user *user_buf, size_t count,
 				     loff_t *ppos)

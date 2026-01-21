@@ -2600,6 +2600,8 @@ static int post_relocation_kage(struct module *mod,
 
 static int post_relocation(struct module *mod, const struct load_info *info)
 {
+	int ret;
+
 	/* Sort exception table now relocations are done. */
 	sort_extable(mod->extable, mod->extable + mod->num_exentries);
 
@@ -2620,7 +2622,12 @@ static int post_relocation(struct module *mod, const struct load_info *info)
 #endif
 
 	/* Arch-specific module finalizing. */
-	return module_finalize(info->hdr, info->sechdrs, mod);
+	ret = module_finalize(info->hdr, info->sechdrs, mod);
+#ifdef CONFIG_SECURITY_KAGE
+	if (info->is_lfi)
+		kage_post_finalize(mod->kage);
+#endif
+	return ret;
 }
 
 /* Call module constructors. */

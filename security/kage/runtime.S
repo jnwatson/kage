@@ -375,3 +375,17 @@ lfi_syscall_entry_variadic:
 	ldr x22,      [x0, KAGE_PROC_REG_X_OFFS(22)]
 	b  lfi_restore_partial_regs
 	brk #0
+
+/* This trampoline is used during module loading for alternative patching.
+ * It is mapped into guest space but only called by the host.  It is destroyed
+ * before the guest starts executing. */
+.p2align 4
+.globl load_tramp
+load_tramp:
+	ldr x16, 1f
+	br  x16
+1:	.quad 0
+.p2align 4
+.globl load_tramp_end
+load_tramp_end:
+

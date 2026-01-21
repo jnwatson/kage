@@ -10,11 +10,11 @@ extern void lfi_g2h_trampoline_end(void);
 extern void lfi_g2h_trampoline(void);
 extern void lfi_h2g_trampoline_end(void);
 extern void lfi_h2g_trampoline(void);
-extern void lfi_syscall_entry_override(void);
-extern void lfi_syscall_entry_override_end(void);
 extern void lfi_setup_kage_call(void);
 extern void lfi_setup_kage_call_end(void);
 extern void do_ret(void);
 extern void do_ret_end(void);
+extern void load_tramp(void);
+extern void load_tramp_end(void);
 
 #endif

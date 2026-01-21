@@ -78,6 +78,9 @@ struct kage {
 
 	struct assoc_array closures;
 
+	void * load_tramp_text;
+	unsigned int num_load_tramps;
+
         /* Stores mapping of opaque references to addresses of struct
          * pointers */
 	struct kage_objstorage *objstorage;
@@ -90,6 +93,8 @@ void kage_memory_free(struct kage *kage, const void *vaddr);
 void kage_memory_free_all(struct kage *kage);
 struct kage *kage_create(const char *modname);
 void kage_destroy(struct kage *kage);
+void kage_destroy_load_trampolines(struct kage *kage);
+void kage_post_finalize(struct kage *kage);
 int kage_post_relocation(struct kage *kage, struct module *mod,
 			 const Elf_Shdr *sechdrs, unsigned int shnum,
 			 const Elf_Sym *symtab, unsigned int num_syms,

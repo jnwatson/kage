@@ -50,6 +50,9 @@
 // Size of individual host-to-guest trampoline
 #define KAGE_H2G_TRAMP_SIZE (4 * 4)
 
+// Size of load trampoline
+#define KAGE_LOAD_TRAMP_SIZE 16
+
 // Size of the host-to-guest trampoline region size
 #define KAGE_H2G_TRAMP_REGION_SIZE 4096
 
