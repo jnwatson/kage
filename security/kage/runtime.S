@@ -341,13 +341,14 @@ lfi_syscall_entry_variadic:
 	ldr x15, [x22, KAGE_G2H_CALL_GUARD_FUNC_OFFS]
 	blr x15
 	cmp x0, #0
-	b.ne 0f   // don't call host function if guard fails
+	b.ne return // don't call host function if guard fails
 
+	happy:
 	// Call the host function
-	ldp x0, x1,   [x27, KAGE_PROC_REG_X_OFFS(0)]
-	ldp x2, x3,   [x27, KAGE_PROC_REG_X_OFFS(2)]
-	ldp x4, x5,   [x27, KAGE_PROC_REG_X_OFFS(4)]
-	ldp x6, x7,   [x27, KAGE_PROC_REG_X_OFFS(6)]
+	ldp x0, x1, [x27, KAGE_PROC_REG_X_OFFS(0)]
+	ldp x2, x3, [x27, KAGE_PROC_REG_X_OFFS(2)]
+	ldp x4, x5, [x27, KAGE_PROC_REG_X_OFFS(4)]
+	ldp x6, x7, [x27, KAGE_PROC_REG_X_OFFS(6)]
 	ldr x15, [x22, KAGE_G2H_CALL_HOST_FUNC_OFFS]
 	blr x15
 
@@ -358,21 +359,15 @@ lfi_syscall_entry_variadic:
 	ldr x15, [x22, #KAGE_G2H_CALL_GUARD_FUNC2_OFFS]
 	bl guard_sig_postcall
 
-	0:
+	return:
 	str x0, [x27, KAGE_PROC_REG_X_OFFS(0)] // Save return value
-
-	// Copy arguments back to guest stack
-	ldr   x0, [x27, KAGE_PROC_REG_X_OFFS(31)] // dest: original guest sp
-	mov   x1, sp    // src: current (host) sp
-        mov   x2, x20   // size
-	bl    memcpy
 
 	// Cleanup
 	add sp, sp, x20  // Restore the stack
 	mov x0, x27 // kage_proc* into x0 for the return path
-	ldr x19,      [x0, KAGE_PROC_REG_X_OFFS(19)]
-	ldr x20,      [x0, KAGE_PROC_REG_X_OFFS(20)]
-	ldr x22,      [x0, KAGE_PROC_REG_X_OFFS(22)]
+	ldr x19, [x0, KAGE_PROC_REG_X_OFFS(19)]
+	ldr x20, [x0, KAGE_PROC_REG_X_OFFS(20)]
+	ldr x22, [x0, KAGE_PROC_REG_X_OFFS(22)]
 	b  lfi_restore_partial_regs
 	brk #0
 

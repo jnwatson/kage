@@ -8,6 +8,8 @@
 #include <linux/spinlock.h>
 #include <linux/slab.h>
 #include <linux/device.h>
+#include <kunit/test.h>
+#include <kunit/assert.h>
 
 #include <linux/kage.h>
 
@@ -18,12 +20,17 @@
 #include "funcsig.h"
 
 // Nic tmp
-//#pragma clang optimize off 
+// #pragma clang optimize off
 
 struct res_t{
 	struct kage *kage;
 	void * mem;
 };
+
+static int in_guest(const struct kage_proc *proc, unsigned long ptr)
+{
+	return (ptr - proc->kage->base) < KAGE_GUEST_SIZE;
+}
 
 static void devm_free(void *vres)
 {
@@ -31,25 +38,44 @@ static void devm_free(void *vres)
 	kage_memory_free(res->kage, res->mem);
 	kfree(vres);
 }
-static void guard_kfree(struct kage_proc *proc, 
-			struct kage_g2h_call * call, 
+
+static void guard_kfree(struct kage_proc *proc,
+			struct kage_g2h_call * call,
 			const void *object)
 {
-	if (((unsigned long)(object) - proc->kage->base) < KAGE_GUEST_SIZE) {
-		pr_err(MODULE_NAME ": Invalid pointer passed to kfree\n");
+	if (!in_guest(proc, (unsigned long)object)) {
+		pr_err(MODULE_NAME ": Invalid pointer %px passed to kfree\n",
+		       object);
+		return;
 	}
 	kage_memory_free(proc->kage, object);
 }
 
-static void *guard_devm_kmalloc(struct kage_proc *proc, 
-				struct kage_g2h_call * call, unsigned long odev, 
+#ifdef CONFIG_KUNIT
+static void guard___kunit_do_failed_assertion(struct kage_proc *proc,
+			       struct kage_g2h_call * call,
+			       struct kunit *test,
+			       const struct kunit_loc *loc,
+			       enum kunit_assert_type type,
+			       const struct kunit_assert *assert,
+			       assert_format_t assert_format,
+			       const char *fmt, ...)
+{
+	// FIXME: guard these parameters
+	// FIXME: Need this in assembly to forward varargs
+	//
+	// FIXME need a function to unwrap a trampoline!
+	assert_format = kunit_unary_assert_format;
+	__kunit_do_failed_assertion(test, loc, type, assert,
+				    assert_format,
+				    "test");
+}
+#endif
+
+static void *guard_devm_kmalloc(struct kage_proc *proc,
+				struct kage_g2h_call * call, unsigned long odev,
 				size_t size, gfp_t gfp)
 {
-	// Verify odev
-	if ((odev - proc->kage->base) < KAGE_GUEST_SIZE) {
-		pr_err(MODULE_NAME ": Invalid dev pointer passed to devm_kmalloc\n");
-		return 0;
-	}
 	BUG_ON((call->spec[1].kind) != KAGE_ARG_PSTRUCT);
 	u16 dev_type_id = call->spec[1].spec.obj_type_id;
 
@@ -84,8 +110,8 @@ static void *guard_devm_kmalloc(struct kage_proc *proc,
 }
 // FIXME: need corresponding realloc, free
 
-static unsigned long guard_kmalloc_trace(struct kage_proc *proc, 
-					 struct kage_g2h_call *call, 
+static unsigned long guard_kmalloc_trace(struct kage_proc *proc,
+					 struct kage_g2h_call *call,
 					 struct kmem_cache *s, gfp_t flags,
 					 size_t size)
 {
@@ -94,7 +120,7 @@ static unsigned long guard_kmalloc_trace(struct kage_proc *proc,
 }
 
 /* Guards and calls a host call using its argument specification. */
-static int guard_sig_precall(struct kage_proc *proc, 
+static int guard_sig_precall(struct kage_proc *proc,
 			     struct kage_g2h_call *host_call)
 {
 	struct kage_argspec *spec = host_call->spec;
@@ -112,9 +138,7 @@ static int guard_sig_precall(struct kage_proc *proc,
 		case KAGE_ARG_VOID:
 			break;
 		case KAGE_ARG_PTR:
-			// Intentional unsigned wrap here
-			if (val &&
-			    (val - proc->kage->base) >= KAGE_GUEST_SIZE) {
+			if (val && !in_guest(proc, val)) {
 				pr_err(MODULE_NAME
 				       ": invalid ptr argument %d value of "
                                        "0x%lx in call to %s\n",
@@ -135,15 +159,16 @@ static int guard_sig_precall(struct kage_proc *proc,
 		case KAGE_ARG_PSTRUCT:
 			if (!val) // NULLs are always safe
 				break;
-			// Check to see if a guest local pointer
-			if ((val - proc->kage->base) < KAGE_GUEST_SIZE)
+			// Bail if a guest local pointer
+			if (in_guest(proc, val))
 				break;
 			void *obj = kage_obj_get(proc->kage, val,
 						 spec->spec.obj_type_id);
 			if (!obj) {
 				pr_err(MODULE_NAME
-				       ": invalid struct ptr in arg %d in call to %s\n",
-				       regnum + 1, host_call->name);
+				       ": invalid struct ptr in arg %d in call "
+				       "to %s\n", regnum + 1, host_call->name);
+				return -1;
 			}
 			((u64 *)(&proc->regs))[regnum] = (unsigned long)obj;
 			break;
@@ -171,9 +196,10 @@ u64 guard_sig_postcall(struct kage_proc *proc, struct kage_g2h_call *host_call,
 	case KAGE_ARG_PTR:
 		if (IS_ERR_OR_NULL((void *)rv))
 			return rv;
-		if ((rv - proc->kage->base) >= KAGE_GUEST_SIZE) {
+		if (!in_guest(proc, rv)) {
 			pr_err(MODULE_NAME
-			       ": out-of-guest pointer return value of %llx returned in call to %s\n",
+			       ": out-of-guest pointer return value of %llx "
+			       "returned in call to %s\n",
 			       rv, host_call->name);
 			return -1;
 		}
@@ -236,11 +262,14 @@ struct kage_g2h_call g2h_call_overrides[] = {
 	NAME_TO_GUARD_ENTRY(devm_kmalloc),
 	NAME_TO_GUARD_ENTRY(kmalloc_trace),
 	NAME_TO_GUARD_ENTRY(kfree),
+#ifdef CONFIG_KUNIT
+	NAME_TO_GUARD_ENTRY(__kunit_do_failed_assertion)
+#endif
 };
 
 void kage_guards_init(void) {
 	for (int i = 0; i < ARRAY_SIZE(g2h_call_overrides); i++)
-		g2h_call_overrides[i].stub = 
+		g2h_call_overrides[i].stub =
 				(unsigned long)lfi_syscall_entry_override;
 }
 

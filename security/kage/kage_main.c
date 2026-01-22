@@ -630,7 +630,7 @@ void kage_memory_free(struct kage *kage, const void *vaddr)
                return;
        }
 
-       // FIXME:  this is super-fragile.  Need a more robust heap system
+       // FIXME:  this is fragile.  Need a more robust heap system
        unsigned long size = 0;
        for (i = first_page; i < nr_pages; i++) {
                if (!test_and_clear_bit(i, kage->alloc_bitmap))
@@ -665,37 +665,6 @@ void kage_memory_free_all(struct kage *kage)
 	vunmap_range(kage->base, kage->base + KAGE_GUEST_SIZE);
 }
 EXPORT_SYMBOL(kage_memory_free_all);
-
-static ssize_t debugfs_trigger_write(struct file *debug_file_node,
-				     const char __user *user_buf, size_t count,
-				     loff_t *ppos);
-
-static struct dentry *my_debugfs_dir;
-// File operations for our debugfs node
-static const struct file_operations debugfs_trigger_fops = {
-	.owner = THIS_MODULE,
-	.write = debugfs_trigger_write,
-	.llseek = no_llseek,
-};
-
-static void init_debugfs(void)
-{
-	my_debugfs_dir = debugfs_create_dir("kage", NULL);
-	if (IS_ERR_OR_NULL(my_debugfs_dir)) {
-		pr_warn("%s: Failed to create debugfs directory\n",
-			MODULE_NAME);
-		my_debugfs_dir = NULL;
-	} else if (!debugfs_create_file("load", 0220, my_debugfs_dir, NULL,
-					&debugfs_trigger_fops)) {
-		pr_warn("%s: Failed to create debugfs file 'load'\n",
-			MODULE_NAME);
-		debugfs_remove_recursive(my_debugfs_dir);
-		my_debugfs_dir = NULL;
-	} else {
-		pr_info("%s: Created debugfs entry at /sys/kernel/debug/kage/load\n",
-			MODULE_NAME);
-	}
-}
 
 static struct kage_objstorage *kage_global_objstorage;
 
@@ -819,6 +788,8 @@ static void do_linktime_assertions(void)
 		KAGE_SETUP_KAGE_CALL_SIZE);
 	BUG_ON((unsigned long)&do_ret_end - (unsigned long)&do_ret !=
 		KAGE_DO_RET_SIZE);
+	BUG_ON((unsigned long)&load_tramp_end -
+	       (unsigned long)&load_tramp != KAGE_LOAD_TRAMP_SIZE);
 }
 
 static int __init kagemodule_init(void)
@@ -829,7 +800,6 @@ static int __init kagemodule_init(void)
 	kage_guards_init();
 
 	/* Initialize context */
-	init_debugfs();
 
 	err = kage_objstorage_init(&kage_global_objstorage);
 	if (err)
@@ -1096,14 +1066,15 @@ unsigned long kage_call(struct kage *kage, void * fn,
 	unsigned long guest_shadow_stack_end =
 			(unsigned long)guest_shadow_stack + SCS_SIZE;
 
-	pr_info("fn call 0x%px guest stack at %px-%lx\n", fn, guest_stack, guest_stack_end - 1);
+	pr_info("kage_call: h2g call 0x%px guest stack at %px-%lx\n", fn,
+                guest_stack, guest_stack_end - 1);
 	if (guest_shadow_stack)
 		pr_info("guest scs   at %px-%lx\n", guest_shadow_stack,
 			guest_shadow_stack_end - 1);
 
 	// Shadow stacks grow up, so initialize ssp to the lowest address
-	lfi_proc_init(lfiproc, kage, (unsigned long)kage->exit_addr, guest_stack_end,
-		      (unsigned long)guest_shadow_stack);
+	lfi_proc_init(lfiproc, kage, (unsigned long)kage->exit_addr,
+                      guest_stack_end, (unsigned long)guest_shadow_stack);
 
 	// Mark the proc data read only
 	err = set_memory_ro(guest_stack_end, PROC_DATA_SIZE >> PAGE_SHIFT);
@@ -1116,64 +1087,13 @@ unsigned long kage_call(struct kage *kage, void * fn,
 
 	rv = lfi_proc_invoke(lfiproc, (unsigned long)fn, p0, p1, p2, p3, p4, p5);
 
-	pr_info("%s to 0x%lx finished\n", __func__, (unsigned long)fn);
+	pr_info("kage_call: h2g call to 0x%px finished\n", fn);
 cleanup:
 	set_memory_rw(guest_stack_end, PROC_DATA_SIZE >> PAGE_SHIFT);
 	kage_memory_free(kage, guest_shadow_stack);
 	kage_memory_free(kage, guest_stack);
 	kfree(lfiproc);
 	return rv;
-}
-
-// FIXME: remove
-static ssize_t debugfs_trigger_write(struct file *debug_file_node,
-				     const char __user *user_buf, size_t count,
-				     loff_t *ppos)
-{
-	char *path_buf;
-	struct file *target_file_ptr;
-	size_t slen;
-
-	if (*ppos != 0) {
-		pr_warn("%s: Partial write to debugfs not supported\n",
-			MODULE_NAME);
-		return -EINVAL;
-	}
-	if (count >= PAGE_SIZE) {
-		pr_warn("%s: Path too long for debugfs\n", MODULE_NAME);
-		return -EINVAL;
-	}
-
-	pr_info("%s: count=%zu\n", MODULE_NAME, count);
-	path_buf = strndup_user(user_buf, PAGE_SIZE);
-	if (IS_ERR(path_buf)) {
-		pr_warn("%s: Failed to copy path from user: err=%ld\n",
-			MODULE_NAME, PTR_ERR(path_buf));
-		return PTR_ERR(path_buf);
-	}
-
-	slen = strlen(path_buf);
-	if (!slen) {
-		pr_warn("%s: Empty path\n", MODULE_NAME);
-		kfree(path_buf);
-		return -EINVAL;
-	}
-
-	if (path_buf[slen - 1] == '\n')
-		path_buf[slen - 1] = '\0';
-
-	target_file_ptr = filp_open(path_buf, O_RDONLY, 0);
-	if (IS_ERR(target_file_ptr)) {
-		pr_warn("%s: Failed to open file '%s': %ld\n", MODULE_NAME,
-			path_buf, PTR_ERR(target_file_ptr));
-		kfree(path_buf);
-		return PTR_ERR(target_file_ptr);
-	}
-
-	filp_close(target_file_ptr, NULL);
-	kfree(path_buf);
-
-	return count;
 }
 
 void kage_destroy(struct kage *kage)
