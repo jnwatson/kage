@@ -220,13 +220,13 @@ lfi_g2h_entry:
 lfi_g2h_entry_override:
 	// Save sp, shadow sp, FR, LR
 	GET_PROC
+	// struct kage_proc *proc == x27 now
 #ifdef CONFIG_SHADOW_CALL_STACK
 	str x18,      [x27, KAGE_PROC_REG_X_OFFS(18)]
 #endif
 	str x29,      [x27, KAGE_PROC_REG_X_OFFS(29)]
 	mov x16, sp
 	stp x30, x16,  [x27, KAGE_PROC_REG_X_OFFS(30)]
-	// struct kage_proc *proc == x27 now
 
 	// sp = proc->kstackp
 	ldr x16, [x27, KAGE_PROC_KSTACKP_OFFS]
@@ -269,24 +269,37 @@ lfi_g2h_entry_override:
 /* Precondition: x17 == struct kage_g2h_call *. */
 .globl lfi_g2h_entry_variadic
 lfi_g2h_entry_variadic:
-        // FIXME:  another one where we really don't need to save regs
-	SAVE_PARTIAL_REGS
-	// FIXME: would be slightly more optimal to group two of these, e.g.
-	// x20 -> x23
+	// Save sp, shadow sp, FR, LR
+	GET_PROC
+	// struct kage_proc *proc == x27 now
+
+	stp x0, x1,   [x27, KAGE_PROC_REG_X_OFFS(0)]
+	stp x2, x3,   [x27, KAGE_PROC_REG_X_OFFS(2)]
+	stp x4, x5,   [x27, KAGE_PROC_REG_X_OFFS(4)]
+	stp x6, x7,   [x27, KAGE_PROC_REG_X_OFFS(6)]
+#ifdef CONFIG_SHADOW_CALL_STACK
+	str x18,      [x27, KAGE_PROC_REG_X_OFFS(18)]
+#endif
+	str x29,      [x27, KAGE_PROC_REG_X_OFFS(29)]
+	mov x16, sp
+	stp x30, x16,  [x27, KAGE_PROC_REG_X_OFFS(30)]
+
 	str x19,      [x27, KAGE_PROC_REG_X_OFFS(19)]
 	str x20,      [x27, KAGE_PROC_REG_X_OFFS(20)]
 	str x22,      [x27, KAGE_PROC_REG_X_OFFS(22)]
-	// x27 now contains kage_proc*
+
 	mov x1, sp
+
+	mov x22, x17  // preserve kage_g2h_call
 
 	// Copy Guest Stack Arguments to Host Stack
 
 	// Get the host kernel stack pointer (offset 0 from kage_proc*)
-	ldr   x19, [x27]
+	ldr x19, [x27]
 
 	// Calculate the top of the guest's current stack
-	add   x20, x1, #KAGE_GUEST_STACK_SIZE
-	and   x20, x20, #~(KAGE_GUEST_STACK_SIZE-1)
+	add x20, x1, #KAGE_GUEST_STACK_SIZE
+	and x20, x20, #~(KAGE_GUEST_STACK_SIZE-1)
 
 	// Calculate the total space used on the guest stack
 	sub   x20, x20, x1
@@ -296,7 +309,6 @@ lfi_g2h_entry_variadic:
 	cmp   x20, x15
 	csel  x20, x20, x15, lo
 
-	mov x22, x17  // preserve kage_g2h_call
 
 	// Make space on the host stack
 	sub   x19, x19, x20
@@ -320,7 +332,6 @@ lfi_g2h_entry_variadic:
 	cmp x0, #0
 	b.ne return // don't call host function if guard fails
 
-	happy:
 	// Call the host function
 	ldp x0, x1, [x27, KAGE_PROC_REG_X_OFFS(0)]
 	ldp x2, x3, [x27, KAGE_PROC_REG_X_OFFS(2)]
@@ -336,16 +347,28 @@ lfi_g2h_entry_variadic:
 	ldr x15, [x22, #KAGE_G2H_CALL_GUARD_FUNC2_OFFS]
 	bl guard_sig_postcall
 
+	// rv preserved in x0
+
 	return:
-	str x0, [x27, KAGE_PROC_REG_X_OFFS(0)] // Save return value
 
 	// Cleanup
 	add sp, sp, x20  // Restore the stack
-	mov x0, x27 // kage_proc* into x0 for the return path
-	ldr x19, [x0, KAGE_PROC_REG_X_OFFS(19)]
-	ldr x20, [x0, KAGE_PROC_REG_X_OFFS(20)]
-	ldr x22, [x0, KAGE_PROC_REG_X_OFFS(22)]
-	b  lfi_restore_partial_regs
+	mov x17,    x27  // x17 = kage_proc*
+
+	// Restore regs
+	ldr x19,      [x17, KAGE_PROC_REG_X_OFFS(19)]
+	ldr x20,      [x17, KAGE_PROC_REG_X_OFFS(20)]
+	ldr x22,      [x17, KAGE_PROC_REG_X_OFFS(22)]
+#ifdef CONFIG_SHADOW_CALL_STACK
+	ldr x18,      [x17, KAGE_PROC_REG_X_OFFS(18)]
+#endif
+	ldr x27,      [x17, KAGE_PROC_REG_X_OFFS(27)]
+	ldr x29,      [x17, KAGE_PROC_REG_X_OFFS(29)]
+	ldp x30, x16, [x17, KAGE_PROC_REG_X_OFFS(30)]
+	mov sp, x16
+	add x30, x27, w30, uxtw
+	ret
+
 	brk #0
 
 /* This trampoline is used during module loading for alternatives patching.
