@@ -277,43 +277,39 @@ lfi_g2h_entry_variadic:
 	stp x2, x3,   [x27, KAGE_PROC_REG_X_OFFS(2)]
 	stp x4, x5,   [x27, KAGE_PROC_REG_X_OFFS(4)]
 	stp x6, x7,   [x27, KAGE_PROC_REG_X_OFFS(6)]
+	stp x20, x21, [x27, KAGE_PROC_REG_X_OFFS(20)]
 #ifdef CONFIG_SHADOW_CALL_STACK
 	str x18,      [x27, KAGE_PROC_REG_X_OFFS(18)]
 #endif
 	str x29,      [x27, KAGE_PROC_REG_X_OFFS(29)]
 	mov x16, sp
-	stp x30, x16,  [x27, KAGE_PROC_REG_X_OFFS(30)]
-
-	str x19,      [x27, KAGE_PROC_REG_X_OFFS(19)]
-	str x20,      [x27, KAGE_PROC_REG_X_OFFS(20)]
-	str x22,      [x27, KAGE_PROC_REG_X_OFFS(22)]
+	stp x30, x16, [x27, KAGE_PROC_REG_X_OFFS(30)]
 
 	mov x1, sp
 
-	mov x22, x17  // preserve kage_g2h_call
+	mov x21, x17  // preserve kage_g2h_call into callee-saved
 
 	// Copy Guest Stack Arguments to Host Stack
 
 	// Get the host kernel stack pointer (offset 0 from kage_proc*)
-	ldr x19, [x27]
+	ldr x16, [x27]
 
 	// Calculate the top of the guest's current stack
 	add x20, x1, #KAGE_GUEST_STACK_SIZE
 	and x20, x20, #~(KAGE_GUEST_STACK_SIZE-1)
 
 	// Calculate the total space used on the guest stack
-	sub   x20, x20, x1
+	sub  x20, x20, x1
 
 	// Determine the number of bytes to copy (min(used, 256))
-	mov   x15, #KAGE_MAX_STACK_ARGS_SIZE
-	cmp   x20, x15
-	csel  x20, x20, x15, lo
-
+	mov  x15, #KAGE_MAX_STACK_ARGS_SIZE
+	cmp  x20, x15
+	csel x20, x20, x15, lo
 
 	// Make space on the host stack
-	sub   x19, x19, x20
+	sub   x16, x16, x20
 
-	mov   x0, x19   // dest: new (host) sp
+	mov   x0, x16   // dest: new (host) sp
 	mov   x1, sp    // src: current (guest) sp
         mov   x2, x20   // size
 	bl    memcpy
@@ -326,8 +322,8 @@ lfi_g2h_entry_variadic:
 
 	// Call guard func 1 (guard_sig_precall)
 	mov x0, x27   // kage_proc* is 1st parameter
-	mov x1, x22   // kage_g2h_call* is 2nd parameter
-	ldr x15, [x22, KAGE_G2H_CALL_GUARD_FUNC_OFFS]
+	mov x1, x21   // kage_g2h_call* is 2nd parameter
+	ldr x15, [x21, KAGE_G2H_CALL_GUARD_FUNC_OFFS]
 	blr x15
 	cmp x0, #0
 	b.ne return // don't call host function if guard fails
@@ -337,28 +333,24 @@ lfi_g2h_entry_variadic:
 	ldp x2, x3, [x27, KAGE_PROC_REG_X_OFFS(2)]
 	ldp x4, x5, [x27, KAGE_PROC_REG_X_OFFS(4)]
 	ldp x6, x7, [x27, KAGE_PROC_REG_X_OFFS(6)]
-	ldr x15, [x22, KAGE_G2H_CALL_HOST_FUNC_OFFS]
+	ldr x15, [x21, KAGE_G2H_CALL_HOST_FUNC_OFFS]
 	blr x15
 
 	// Call guard func 2 (guard_sig_postcall)
 	mov x2, x0
 	mov x0, x27
-	mov x1, x22
-	ldr x15, [x22, #KAGE_G2H_CALL_GUARD_FUNC2_OFFS]
+	mov x1, x21
+	ldr x15, [x21, #KAGE_G2H_CALL_GUARD_FUNC2_OFFS]
 	bl guard_sig_postcall
-
 	// rv preserved in x0
 
 	return:
 
-	// Cleanup
 	add sp, sp, x20  // Restore the stack
-	mov x17,    x27  // x17 = kage_proc*
 
 	// Restore regs
-	ldr x19,      [x17, KAGE_PROC_REG_X_OFFS(19)]
-	ldr x20,      [x17, KAGE_PROC_REG_X_OFFS(20)]
-	ldr x22,      [x17, KAGE_PROC_REG_X_OFFS(22)]
+	mov x17, x27  // x17 = kage_proc*
+	ldp x20, x21, [x17, KAGE_PROC_REG_X_OFFS(20)]
 #ifdef CONFIG_SHADOW_CALL_STACK
 	ldr x18,      [x17, KAGE_PROC_REG_X_OFFS(18)]
 #endif
