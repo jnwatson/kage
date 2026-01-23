@@ -1036,7 +1036,7 @@ unsigned long kage_call(struct kage *kage, void * fn,
               unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	void *guest_stack;
-	void *guest_shadow_stack;
+	void *guest_shadow_stack = NULL;
 	unsigned long rv;
 	struct kage_proc *lfiproc;
 	size_t alloc_size;
@@ -1057,11 +1057,13 @@ unsigned long kage_call(struct kage *kage, void * fn,
 		return -1;
 	}
 
+#ifdef CONFIG_SHADOW_CALL_STACK
 	guest_shadow_stack = guest_scs_alloc(kage);
 	if (IS_ERR(guest_shadow_stack)) {
 		kage_memory_free(kage, guest_stack);
 		return -1;
 	}
+#endif
 
 	lfiproc = alloc_lfiproc(kage);
 	if (!lfiproc) {
