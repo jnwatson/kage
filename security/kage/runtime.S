@@ -4,6 +4,7 @@
 // Places the pointer to the active kage_proc in x27.
 .macro GET_PROC
 /* Precondition: syspage (base of guest domain) in x27 */
+/* Postcondition: kage_proc * in x27 */
 
     /* Add (stack size - 1) to SP to guarantee we are in the next block (except
        if we're already at the top of the stack) */
@@ -32,24 +33,8 @@
 	stp x30, x16,  [x27, KAGE_PROC_REG_X_OFFS(30)]
 .endm
 
-.macro RESTORE_INVOKE_REGS
-	ldp x2, x3,   [x0, KAGE_PROC_REG_X_OFFS(2)]
-	ldp x4, x5,   [x0, KAGE_PROC_REG_X_OFFS(4)]
-	ldp x6, x7,   [x0, KAGE_PROC_REG_X_OFFS(6)]
-	ldp x8, x9,   [x0, KAGE_PROC_REG_X_OFFS(8)]
-	ldp x10, x11, [x0, KAGE_PROC_REG_X_OFFS(10)]
-	ldp x12, x13, [x0, KAGE_PROC_REG_X_OFFS(12)]
-	ldp x14, x15, [x0, KAGE_PROC_REG_X_OFFS(14)]
-	ldp x16, x17, [x0, KAGE_PROC_REG_X_OFFS(16)]
-	ldr x18,      [x0, KAGE_PROC_REG_X_OFFS(18)]
-	ldr x27,      [x0, KAGE_PROC_REG_X_OFFS(27)]
-	ldp x30, x1,  [x0, KAGE_PROC_REG_X_OFFS(30)]
-	mov sp, x1
-	ldp x0, x1,   [x0, KAGE_PROC_REG_X_OFFS(0)]
-.endm
-
-/* This trampoline is executed in the guest to return from a function called by the
- * host. */
+/* This trampoline is executed in the guest to return from a function called by
+ * the host. */
 .p2align 4
 .globl do_ret
 do_ret:
@@ -61,7 +46,7 @@ do_ret:
 do_ret_end:
 
 /* This code is called from guest to return back to the host when called
- * by lfi_asm_invoke, as well as when the guest calls into the host */
+ * by lfi_asm_invoke */
 .p2align 4
 .globl lfi_ret
 lfi_ret:
@@ -152,33 +137,6 @@ lfi_restore_partial_regs:
 	add x30, x27, w30, uxtw
 	ret
 
-// lfi_restore_regs(Proc* p)
-// Restores registers from the given Proc struct.
-// This function does not return.
-.p2align 4
-.globl lfi_restore_regs
-lfi_restore_regs:
-	ldp x2, x3,   [x0, KAGE_PROC_REG_X_OFFS(2)]
-	ldp x4, x5,   [x0, KAGE_PROC_REG_X_OFFS(4)]
-	ldp x6, x7,   [x0, KAGE_PROC_REG_X_OFFS(6)]
-	ldp x8, x9,   [x0, KAGE_PROC_REG_X_OFFS(8)]
-	ldp x10, x11, [x0, KAGE_PROC_REG_X_OFFS(10)]
-	ldp x12, x13, [x0, KAGE_PROC_REG_X_OFFS(12)]
-	ldp x14, x15, [x0, KAGE_PROC_REG_X_OFFS(14)]
-	ldp x16, x17, [x0, KAGE_PROC_REG_X_OFFS(16)]
-	ldp x18, x19, [x0, KAGE_PROC_REG_X_OFFS(18)]
-	ldp x20, x21, [x0, KAGE_PROC_REG_X_OFFS(20)]
-	ldp x22, x23, [x0, KAGE_PROC_REG_X_OFFS(22)]
-	ldp x24, x25, [x0, KAGE_PROC_REG_X_OFFS(24)]
-	ldp x26, x27, [x0, KAGE_PROC_REG_X_OFFS(26)]
-	ldp x28, x29, [x0, KAGE_PROC_REG_X_OFFS(28)]
-	ldp x30, x1,  [x0, KAGE_PROC_REG_X_OFFS(30)]
-	mov sp, x1
-	ldp x0, x1,   [x0, KAGE_PROC_REG_X_OFFS(0)]
-	add x30, x27, w30, uxtw
-	ret
-	brk #0
-
 /* The trampoline code region and the trampoline data region (aka literal pool)
  * are the same size.  This code will be duplicated in the code section as many
  * times as there are different guest kernel calls */
@@ -231,8 +189,8 @@ lfi_setup_kage_call_end:
 
 /* Precondition: x17 == struct kage_g2h_call *. */
 /* This code is jumped to from lfi_g2h_trampoline */
-.globl lfi_syscall_entry
-lfi_syscall_entry:
+.globl lfi_g2h_entry
+lfi_g2h_entry:
 	SAVE_PARTIAL_REGS
 	// struct kage_proc *proc == x27 now
 	// sp = proc->kstackp
@@ -254,24 +212,32 @@ lfi_syscall_entry:
 	b  lfi_restore_partial_regs // head back to guest
 	brk #0
 
-/* Precondition: x17 == struct kage_host_call *. */
-/* This code is jumped to from lfi_g2h_trampoline.  This entry is appropriate for
- * calling to manually coded guards that want (kage, p0, ...) parameters
+/* Precondition: x17 == struct kage_g2h_call *. */
+/* This code is jumped to from lfi_g2h_trampoline.  This entry is appropriate
+ * for calling to manually coded guards that want (kage, p0, ...) parameters
  */
-.globl lfi_syscall_entry_override
-lfi_syscall_entry_override:
-	// FIXME: do we really need to save here (and restore later)?  We trust the host, right?
-	SAVE_PARTIAL_REGS
+.globl lfi_g2h_entry_override
+lfi_g2h_entry_override:
+	// Save sp, shadow sp, FR, LR
+	GET_PROC
+#ifdef CONFIG_SHADOW_CALL_STACK
+	str x18,      [x27, KAGE_PROC_REG_X_OFFS(18)]
+#endif
+	str x29,      [x27, KAGE_PROC_REG_X_OFFS(29)]
+	mov x16, sp
+	stp x30, x16,  [x27, KAGE_PROC_REG_X_OFFS(30)]
 	// struct kage_proc *proc == x27 now
 
 	// sp = proc->kstackp
 	ldr x16, [x27, KAGE_PROC_KSTACKP_OFFS]
 	mov sp, x16
 
+#ifdef CONFIG_SHADOW_CALL_STACK
 	// x18 (shadow stack) = proc->sstackp
 	ldr x18, [x27, KAGE_PROC_SSTACKP_OFFS]
+#endif
 
-	/* Shift the argument registers to the right so kage, 
+	/* Shift the argument registers to the right so proc,
 	 * kage_g2h_call params are first */
 	mov x7, x5
 	mov x6, x4
@@ -285,14 +251,24 @@ lfi_syscall_entry_override:
 
 	blr x17 // Call guard function
 	// proc->regs[0] = return value from guard func
-	str x0, [x27, KAGE_PROC_REGS_OFFS+16*0]
-	mov x0, x27 // kage_proc * into x0
-	b  lfi_restore_partial_regs
+	mov x17, x27 // kage_proc * into x0
+
+	// Restore regs
+#ifdef CONFIG_SHADOW_CALL_STACK
+	ldr x18,      [x17, KAGE_PROC_REG_X_OFFS(18)]
+#endif
+	ldr x27,      [x17, KAGE_PROC_REG_X_OFFS(27)]
+	ldr x29,      [x17, KAGE_PROC_REG_X_OFFS(29)]
+	ldp x30, x16, [x17, KAGE_PROC_REG_X_OFFS(30)]
+	mov sp, x16
+	add x30, x27, w30, uxtw
+	ret
+
 	brk #0
 
 /* Precondition: x17 == struct kage_g2h_call *. */
-.globl lfi_syscall_entry_variadic
-lfi_syscall_entry_variadic:
+.globl lfi_g2h_entry_variadic
+lfi_g2h_entry_variadic:
         // FIXME:  another one where we really don't need to save regs
 	SAVE_PARTIAL_REGS
 	// FIXME: would be slightly more optimal to group two of these, e.g.
@@ -332,7 +308,9 @@ lfi_syscall_entry_variadic:
 
 	// Switch to the host stack and shadow stack
 	mov   sp, x0    // memcpy returns dest in x0
+#ifdef CONFIG_SHADOW_CALL_STACK
 	ldr   x18, [x27, #KAGE_PROC_SSTACKP_OFFS]
+#endif
 
 	// Call guard func 1 (guard_sig_precall)
 	mov x0, x27   // kage_proc* is 1st parameter
@@ -370,8 +348,8 @@ lfi_syscall_entry_variadic:
 	b  lfi_restore_partial_regs
 	brk #0
 
-/* This trampoline is used during module loading for alternative patching.
- * It is mapped into guest space but only called by the host.  It is destroyed
+/* This trampoline is used during module loading for alternatives patching.
+ * It is mapped into guest but only called by the host.  It is destroyed
  * before the guest starts executing. */
 .p2align 4
 .globl load_tramp

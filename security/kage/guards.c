@@ -248,7 +248,7 @@ unsigned long guard_sig_postcall(struct kage_proc *proc,
 	return rv;
 }
 
-// Called from lfi_syscall_entry
+// Called from lfi_g2h_entry
 /* Guards and calls a host call using just its signature */
 unsigned long guard_sig(struct kage_proc *proc, struct kage_g2h_call *host_call)
 {
@@ -290,7 +290,7 @@ struct kage_g2h_call g2h_call_overrides[] = {
 void kage_guards_init(void) {
 	for (int i = 0; i < ARRAY_SIZE(g2h_call_overrides); i++)
 		g2h_call_overrides[i].stub =
-				(unsigned long)lfi_syscall_entry_override;
+				(unsigned long)lfi_g2h_entry_override;
 }
 
 static struct kage_g2h_call *find_g2h_call_override(const char *name)
@@ -338,11 +338,11 @@ struct kage_g2h_call *kage_guard_create_g2h_call(const char *name,
 	if (last_arg->kind == KAGE_ARG_VARIADIC) {
 		call->guard_func = (unsigned long)guard_sig_precall;
 		call->guard_func2 = (unsigned long)guard_sig_postcall;
-		call->stub = (unsigned long)lfi_syscall_entry_variadic;
+		call->stub = (unsigned long)lfi_g2h_entry_variadic;
 	} else {
 		call->guard_func = (unsigned long)guard_sig;
 		call->guard_func2 = 0;
-		call->stub = (unsigned long)lfi_syscall_entry;
+		call->stub = (unsigned long)lfi_g2h_entry;
 	}
 	call->name = name;
 	call->host_func = target_func;

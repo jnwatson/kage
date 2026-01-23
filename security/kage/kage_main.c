@@ -240,7 +240,7 @@ on_err:
 
 struct g2h_tramp_data_entry {
 	const struct kage_g2h_call *call;
-	unsigned long stub; // points to lfi_syscall_entry{,_override}
+	unsigned long stub; // points to lfi_g2h_entry{,_override}
 };
 
 static_assert(sizeof(struct g2h_tramp_data_entry)==KAGE_G2H_TRAMP_SIZE);

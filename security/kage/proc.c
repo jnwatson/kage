@@ -7,10 +7,9 @@
 #include "arm64.h"
 
 extern unsigned long lfi_asm_invoke(struct kage_proc *proc, unsigned long entry,
-			      unsigned long p0,
-			      unsigned long p1, unsigned long p2,
-			      unsigned long p3, unsigned long p4,
-			      unsigned long p5);
+				    unsigned long p0, unsigned long p1,
+				    unsigned long p2, unsigned long p3,
+				    unsigned long p4, unsigned long p5);
 
 unsigned long procaddr(unsigned long base, unsigned long addr)
 {
@@ -42,8 +41,8 @@ void lfi_proc_init(struct kage_proc *proc, struct kage *kage, unsigned long lr,
 }
 
 unsigned long lfi_proc_invoke(struct kage_proc *proc, unsigned long fn,
-			      unsigned long p0, unsigned long p1, 
-                              unsigned long p2, unsigned long p3, 
+			      unsigned long p0, unsigned long p1,
+                              unsigned long p2, unsigned long p3,
                               unsigned long p4, unsigned long p5) {
 	pr_info("lfi_proc_invoke: starting guest function at 0x%lx\n", fn);
 
