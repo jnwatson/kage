@@ -418,6 +418,18 @@ unsigned long kage_symbol_value(struct kage *kage, const char *name,
 	return ret;
 }
 
+void *kage_unwrap_g2h_tramp(struct kage *kage, void *addr)
+{
+	unsigned long offset = (unsigned long)addr -
+            (unsigned long)kage->g2h_tramp_text;
+
+	if (offset >= kage->num_g2h_calls * KAGE_G2H_TRAMP_SIZE)
+		return NULL;
+	if (offset % KAGE_G2H_TRAMP_SIZE != 0)
+		return NULL;
+	return (void *)kage->g2h_calls[offset / KAGE_G2H_TRAMP_SIZE]->host_func;
+}
+
 static struct kage_h2g_tramp_data_entry *alloc_h2g_entry(struct kage *kage)
 {
 	if (kage->num_h2g_calls >= KAGE_MAX_H2G_CALLS)

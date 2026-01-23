@@ -20,16 +20,16 @@
 #include "funcsig.h"
 
 // Nic tmp
-// #pragma clang optimize off
+#pragma clang optimize off
 
 struct res_t{
 	struct kage *kage;
 	void * mem;
 };
 
-static int in_guest(const struct kage_proc *proc, unsigned long ptr)
+static int in_guest(const struct kage_proc *proc, const void *ptr)
 {
-	return (ptr - proc->kage->base) < KAGE_GUEST_SIZE;
+	return ((unsigned long)ptr - proc->kage->base) < KAGE_GUEST_SIZE;
 }
 
 static void devm_free(void *vres)
@@ -43,7 +43,7 @@ static void guard_kfree(struct kage_proc *proc,
 			struct kage_g2h_call * call,
 			const void *object)
 {
-	if (!in_guest(proc, (unsigned long)object)) {
+	if (!in_guest(proc, object)) {
 		pr_err(MODULE_NAME ": Invalid pointer %px passed to kfree\n",
 		       object);
 		return;
@@ -54,21 +54,38 @@ static void guard_kfree(struct kage_proc *proc,
 #ifdef CONFIG_KUNIT
 static void guard___kunit_do_failed_assertion(struct kage_proc *proc,
 			       struct kage_g2h_call * call,
-			       struct kunit *test,
-			       const struct kunit_loc *loc,
-			       enum kunit_assert_type type,
-			       const struct kunit_assert *assert,
-			       assert_format_t assert_format,
-			       const char *fmt, ...)
+			       struct kunit *otest,
+			       const struct kunit_loc *oloc,
+			       enum kunit_assert_type otype,
+			       const struct kunit_assert *oassert,
+			       assert_format_t oassert_format,
+			       const char *ofmt, ...)
 {
-	// FIXME: guard these parameters
-	// FIXME: Need this in assembly to forward varargs
-	//
-	// FIXME need a function to unwrap a trampoline!
-	assert_format = kunit_unary_assert_format;
-	__kunit_do_failed_assertion(test, loc, type, assert,
+	assert_format_t assert_format;
+	va_list args;
+	struct va_format message;
+	char const *fn = "__kunit_do_failed_assertion";
+
+	assert_format = kage_unwrap_g2h_tramp(proc->kage, oassert_format);
+        if (!assert_format) {
+		pr_err("kage: invalid param 5 in %s\n", fn);
+		return;
+        }
+
+	if (in_guest(proc, otest)) {
+		pr_err("kage: invalid param 1 in %s\n", fn);
+		return;
+	}
+
+	va_start(args, ofmt);
+
+	message.fmt = ofmt;
+	message.va = &args;
+	__kunit_do_failed_assertion(otest, oloc, otype, oassert,
 				    assert_format,
-				    "test");
+				    "%pV", message);
+
+	va_end(args);
 }
 #endif
 
@@ -138,7 +155,7 @@ static int guard_sig_precall(struct kage_proc *proc,
 		case KAGE_ARG_VOID:
 			break;
 		case KAGE_ARG_PTR:
-			if (val && !in_guest(proc, val)) {
+			if (val && !in_guest(proc, (void *)val)) {
 				pr_err(MODULE_NAME
 				       ": invalid ptr argument %d value of "
                                        "0x%lx in call to %s\n",
@@ -153,14 +170,14 @@ static int guard_sig_precall(struct kage_proc *proc,
 			pr_info("closure_over created at 0x%px for guest func "
 				"0x%lx (%s)", closure, val, host_call->name);
 
-			((u64 *)regs)[regnum] = (unsigned long)closure;
+			((unsigned long *)regs)[regnum] = (unsigned long)closure;
 			break;
 		}
 		case KAGE_ARG_PSTRUCT:
 			if (!val) // NULLs are always safe
 				break;
 			// Bail if a guest local pointer
-			if (in_guest(proc, val))
+			if (in_guest(proc, (void *)val))
 				break;
 			void *obj = kage_obj_get(proc->kage, val,
 						 spec->spec.obj_type_id);
@@ -170,7 +187,7 @@ static int guard_sig_precall(struct kage_proc *proc,
 				       "to %s\n", regnum + 1, host_call->name);
 				return -1;
 			}
-			((u64 *)(&proc->regs))[regnum] = (unsigned long)obj;
+			((unsigned long *)(&proc->regs))[regnum] = (unsigned long)obj;
 			break;
 		case KAGE_ARG_VARIADIC:
 			goto end_loop;
@@ -184,8 +201,9 @@ end_loop:
 	return 0;
 }
 
-u64 guard_sig_postcall(struct kage_proc *proc, struct kage_g2h_call *host_call,
-		       u64 rv)
+unsigned long guard_sig_postcall(struct kage_proc *proc,
+				 struct kage_g2h_call *host_call,
+			         unsigned long rv)
 {
 	struct kage_argspec *spec = host_call->spec;
 
@@ -196,9 +214,9 @@ u64 guard_sig_postcall(struct kage_proc *proc, struct kage_g2h_call *host_call,
 	case KAGE_ARG_PTR:
 		if (IS_ERR_OR_NULL((void *)rv))
 			return rv;
-		if (!in_guest(proc, rv)) {
+		if (!in_guest(proc, (void *)rv)) {
 			pr_err(MODULE_NAME
-			       ": out-of-guest pointer return value of %llx "
+			       ": out-of-guest pointer return value of %lx "
 			       "returned in call to %s\n",
 			       rv, host_call->name);
 			return -1;
@@ -232,11 +250,13 @@ u64 guard_sig_postcall(struct kage_proc *proc, struct kage_g2h_call *host_call,
 
 // Called from lfi_syscall_entry
 /* Guards and calls a host call using just its signature */
-u64 guard_sig(struct kage_proc *proc, struct kage_g2h_call *host_call)
+unsigned long guard_sig(struct kage_proc *proc, struct kage_g2h_call *host_call)
 {
 	struct kage_regs *regs = &proc->regs;
-	u64 rv;
-	u64 (*host_func)(u64 p0, u64 p1, u64 p2, u64 p3, u64 p4, u64 p5);
+	unsigned long rv;
+	unsigned long (*host_func)(unsigned long p0, unsigned long p1,
+				   unsigned long p2, unsigned long p3,
+				   unsigned long p4, unsigned long p5);
 
 	if (guard_sig_precall(proc, host_call)) {
 		return -EINVAL;

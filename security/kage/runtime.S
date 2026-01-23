@@ -273,7 +273,6 @@ lfi_syscall_entry_override:
 
 	/* Shift the argument registers to the right so kage, 
 	 * kage_g2h_call params are first */
-	mov x8, x6
 	mov x7, x5
 	mov x6, x4
 	mov x5, x3

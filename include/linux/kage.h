@@ -110,6 +110,8 @@ unsigned long kage_symbol_value(struct kage *kage, const char *name,
 				const Elf_Ehdr *hdr, const Elf_Shdr *alt_shdr,
 				unsigned int sym_index);
 
+void *kage_unwrap_g2h_tramp(struct kage *kage, void *addr);
+
 void *kage_get_closure_over(struct kage *kage, unsigned long func);
 
 #ifdef CONFIG_KUNIT
