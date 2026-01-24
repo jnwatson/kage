@@ -10,21 +10,30 @@ struct kage;
 
 /* The guest's saved context */
 struct kage_regs {
-	unsigned long x[31];
-	unsigned long sp;
+	unsigned long sp;  // guest's stack pointer
+	unsigned long lr;  // guest's LR (x30)
+	unsigned long ssp; // guest's SCS pointer (x18)
+	unsigned long fp;  // guest's frame pointer (x29)
+};
+
+struct kage_proc_args {
+	unsigned long x[8];
 };
 
 struct kage_proc {
-	unsigned long kstackp; // host's saved stack
-	unsigned long sstackp; // host's saved SCS
+	unsigned long kstackp; // host's stack
+	unsigned long sstackp; // host's SCS
 	struct kage *kage;
+	unsigned long caller; // PC of host call (for debugging)
+	unsigned long entry; // initial guest entry point
 	struct kage_regs regs; // guest's saved registers
 };
 
-void lfi_proc_init(struct kage_proc *proc, struct kage *kage, 
-		   unsigned long entry, unsigned long sp, unsigned long ssp);
+void lfi_proc_init(struct kage_proc *proc, struct kage *kage,
+		   unsigned long pc, unsigned long lr, unsigned long sp,
+		   unsigned long ssp, unsigned long caller);
 
-unsigned long lfi_proc_invoke(struct kage_proc *proc, unsigned long fn,
+unsigned long lfi_proc_invoke(struct kage_proc *proc,
 			      unsigned long p0, unsigned long p1, 
                               unsigned long p2, unsigned long p3, 
                               unsigned long p4, unsigned long p5);

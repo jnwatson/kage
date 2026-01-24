@@ -17,4 +17,10 @@ extern void do_ret_end(void);
 extern void load_tramp(void);
 extern void load_tramp_end(void);
 
+struct kage_proc;
+extern unsigned long lfi_asm_invoke(struct kage_proc *proc,
+				    unsigned long p0, unsigned long p1,
+				    unsigned long p2, unsigned long p3,
+				    unsigned long p4, unsigned long p5);
+
 #endif

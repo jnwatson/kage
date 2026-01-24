@@ -1,8 +1,6 @@
 #ifndef KAGE_ASM_H_
 #define KAGE_ASM_H_
 
-#include <asm/page-def.h>
-
 /* This file includes simple constants appropriate to share among assembly
  * and C files */
 
@@ -15,12 +13,19 @@
 /* offsetof(struct LFIProc, kage) */
 #define KAGE_PROC_KAGE_OFFS 16
 /* offsetof(struct LFIProc, regs) */
-#define KAGE_PROC_REGS_OFFS 24
+#define KAGE_PROC_ENTRY_OFFS 32
+/* offsetof(struct LFIProc, regs) */
+#define KAGE_PROC_REGS_OFFS 40
 #define KAGE_PROC_REG_X_OFFS(x_) (KAGE_PROC_REGS_OFFS + (x_) * 8)
-#define KAGE_PROC_REG_SP_OFFS (KAGE_PROC_REGS_OFFS + 31 * 8)
+
+#define KAGE_PROC_ARGS_SIZE (8 * 8)
+
 #define KAGE_G2H_CALL_GUARD_FUNC_OFFS 8
 #define KAGE_G2H_CALL_GUARD_FUNC2_OFFS 16
 #define KAGE_G2H_CALL_HOST_FUNC_OFFS 32
+
+// offsetof(struct kage, base)
+#define KAGE_BASE_OFFS 0
 
 /* log2(guest stack). Must == THREAD_SIZE_ORDER */
 #define KAGE_GUEST_STACK_ORDER 13

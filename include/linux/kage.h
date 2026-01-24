@@ -41,11 +41,12 @@ struct kage_gvar {
 };
 
 struct kage {
+	unsigned long base;
+
         const char *modname;
 	spinlock_t lock;
 
 	// Lowest address of guest address space
-	unsigned long base;
 
         // Bitmap of allocated pages in guest
 	unsigned long *alloc_bitmap;
@@ -105,6 +106,11 @@ unsigned long kage_call(struct kage *kage, void * fn, unsigned long p0,
 			unsigned long p1, unsigned long p2, unsigned long p3,
 			unsigned long p4, unsigned long p5);
 
+typedef
+unsigned long (*kage_call_t)(struct kage *kage, void * fn, unsigned long p0,
+			unsigned long p1, unsigned long p2, unsigned long p3,
+			unsigned long p4, unsigned long p5);
+
 unsigned long kage_symbol_value(struct kage *kage, const char *name,
 				unsigned long target_func,
 				const Elf_Ehdr *hdr, const Elf_Shdr *alt_shdr,
@@ -112,7 +118,7 @@ unsigned long kage_symbol_value(struct kage *kage, const char *name,
 
 void *kage_unwrap_g2h_tramp(struct kage *kage, void *addr);
 
-void *kage_get_closure_over(struct kage *kage, unsigned long func);
+kage_call_t kage_get_closure_over(struct kage *kage, unsigned long func);
 
 #ifdef CONFIG_KUNIT
 void kage_prepare_kunit_suites(struct module *mod);

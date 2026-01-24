@@ -39,8 +39,13 @@ static_assert(offsetof(struct kage_proc, kage) == KAGE_PROC_KAGE_OFFS,
 	      "Inconsistency between proc.h and kage_asm.h");
 static_assert(offsetof(struct kage_proc, regs) == KAGE_PROC_REGS_OFFS,
 	      "Inconsistency between proc.h and kage_asm.h");
-static_assert(offsetof(struct kage_proc, regs.sp) == KAGE_PROC_REG_SP_OFFS,
+static_assert(offsetof(struct kage_proc, entry) == KAGE_PROC_ENTRY_OFFS,
 	      "Inconsistency between proc.h and kage_asm.h");
+
+static_assert(offsetof(struct kage, base) == KAGE_BASE_OFFS,
+	      "Inconsistency between proc.h and kage_asm.h");
+
+static_assert(sizeof(struct kage_proc_args) == KAGE_PROC_ARGS_SIZE);
 
 static_assert(offsetof(struct kage_g2h_call, guard_func) ==
 			KAGE_G2H_CALL_GUARD_FUNC_OFFS,
@@ -481,7 +486,8 @@ static const struct assoc_array_ops kage_h2g_closure_ops = {
 	.diff_objects = kage_h2g_diff_objects,
 };
 
-void *kage_get_closure_over(struct kage *kage, unsigned long func)
+/* Returns a function pointer that calls kage_call(kage, func) */
+kage_call_t kage_get_closure_over(struct kage *kage, unsigned long func)
 {
 	unsigned long irq_flags;
 	struct assoc_array_edit *edit;
@@ -1013,9 +1019,9 @@ static struct kage_proc *alloc_lfiproc(struct kage *kage)
 	return lfiproc;
 }
 
-#ifdef CONFIG_SHADOW_CALL_STACK
 static void * guest_scs_alloc(struct kage *kage)
 {
+#ifdef CONFIG_SHADOW_CALL_STACK
         void * stack= kage_memory_alloc(kage, SCS_SIZE, MOD_DATA, GFP_SCS);
 	if (!stack) {
 		pr_err(MODULE_NAME " %s: Failed to allocate guest shadow stack\n",
@@ -1023,12 +1029,10 @@ static void * guest_scs_alloc(struct kage *kage)
 		return ERR_PTR(-ENOMEM);
 	}
         return stack;
-}
 #else
-static void * guest_scs_alloc(struct kage *kage) {
 	return NULL;
-}
 #endif
+}
 
 // Invoke a function call into the guest
 unsigned long kage_call(struct kage *kage, void * fn,
@@ -1036,7 +1040,7 @@ unsigned long kage_call(struct kage *kage, void * fn,
               unsigned long p3, unsigned long p4, unsigned long p5)
 {
 	void *guest_stack;
-	void *guest_shadow_stack = NULL;
+	void *guest_shadow_stack;
 	unsigned long rv;
 	struct kage_proc *lfiproc;
 	size_t alloc_size;
@@ -1057,13 +1061,11 @@ unsigned long kage_call(struct kage *kage, void * fn,
 		return -1;
 	}
 
-#ifdef CONFIG_SHADOW_CALL_STACK
 	guest_shadow_stack = guest_scs_alloc(kage);
 	if (IS_ERR(guest_shadow_stack)) {
 		kage_memory_free(kage, guest_stack);
 		return -1;
 	}
-#endif
 
 	lfiproc = alloc_lfiproc(kage);
 	if (!lfiproc) {
@@ -1080,26 +1082,27 @@ unsigned long kage_call(struct kage *kage, void * fn,
 	unsigned long guest_shadow_stack_end =
 			(unsigned long)guest_shadow_stack + SCS_SIZE;
 
-	pr_info("kage_call: h2g call 0x%px guest stack at %px-%lx\n", fn,
-                guest_stack, guest_stack_end - 1);
+	pr_info("kage_call: h2g call 0x%px from %pS, guest stack at %px-%lx\n", fn,
+                (void *)_RET_IP_, guest_stack, guest_stack_end - 1);
 	if (guest_shadow_stack)
 		pr_info("guest scs   at %px-%lx\n", guest_shadow_stack,
 			guest_shadow_stack_end - 1);
 
 	// Shadow stacks grow up, so initialize ssp to the lowest address
-	lfi_proc_init(lfiproc, kage, (unsigned long)kage->exit_addr,
-                      guest_stack_end, (unsigned long)guest_shadow_stack);
+	lfi_proc_init(lfiproc, kage, (unsigned long)fn,
+                      (unsigned long)kage->exit_addr, guest_stack_end,
+                      (unsigned long)guest_shadow_stack, _RET_IP_);
 
 	// Mark the proc data read only
 	err = set_memory_ro(guest_stack_end, PROC_DATA_SIZE >> PAGE_SHIFT);
 	if (err) {
-		pr_err(MODULE_NAME ": Failed to set proc data"
-		       "read-only: %pe\n", ERR_PTR(err));
+		pr_err(MODULE_NAME ": Failed to set proc data read-only: %pe\n",
+                       ERR_PTR(err));
 		rv  = -1;
 		goto cleanup;
 	}
 
-	rv = lfi_proc_invoke(lfiproc, (unsigned long)fn, p0, p1, p2, p3, p4, p5);
+	rv = lfi_proc_invoke(lfiproc, p0, p1, p2, p3, p4, p5);
 
 	pr_info("kage_call: h2g call to 0x%px finished\n", fn);
 cleanup:

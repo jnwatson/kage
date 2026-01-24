@@ -16,7 +16,6 @@
 #include "runtime.h"
 #include "proc.h"
 #include "guards.h"
-#include "arm64.h"
 #include "funcsig.h"
 
 // Nic tmp
@@ -138,10 +137,10 @@ static unsigned long guard_kmalloc_trace(struct kage_proc *proc,
 
 /* Guards and calls a host call using its argument specification. */
 static int guard_sig_precall(struct kage_proc *proc,
-			     struct kage_g2h_call *host_call)
+			     struct kage_g2h_call *host_call,
+			     struct kage_proc_args *args)
 {
 	struct kage_argspec *spec = host_call->spec;
-	struct kage_regs *regs = &proc->regs;
 	int regnum = 0;
 	unsigned long val;
 
@@ -149,7 +148,7 @@ static int guard_sig_precall(struct kage_proc *proc,
 	spec++;
 
 	while (spec->kind != KAGE_ARG_END) {
-		val = *lfi_regs_arg(regs, regnum);
+		val = args->x[regnum];
 		switch (spec->kind) {
 		case KAGE_ARG_INT:
 		case KAGE_ARG_VOID:
@@ -170,7 +169,7 @@ static int guard_sig_precall(struct kage_proc *proc,
 			pr_info("closure_over created at 0x%px for guest func "
 				"0x%lx (%s)", closure, val, host_call->name);
 
-			((unsigned long *)regs)[regnum] = (unsigned long)closure;
+			args->x[regnum] = (unsigned long)closure;
 			break;
 		}
 		case KAGE_ARG_PSTRUCT:
@@ -187,7 +186,7 @@ static int guard_sig_precall(struct kage_proc *proc,
 				       "to %s\n", regnum + 1, host_call->name);
 				return -1;
 			}
-			((unsigned long *)(&proc->regs))[regnum] = (unsigned long)obj;
+			args->x[regnum] = (unsigned long)obj;
 			break;
 		case KAGE_ARG_VARIADIC:
 			goto end_loop;
@@ -250,21 +249,21 @@ unsigned long guard_sig_postcall(struct kage_proc *proc,
 
 // Called from lfi_g2h_entry
 /* Guards and calls a host call using just its signature */
-unsigned long guard_sig(struct kage_proc *proc, struct kage_g2h_call *host_call)
+unsigned long guard_sig(struct kage_proc *proc, struct kage_g2h_call *host_call,
+			struct kage_proc_args *args)
 {
-	struct kage_regs *regs = &proc->regs;
 	unsigned long rv;
 	unsigned long (*host_func)(unsigned long p0, unsigned long p1,
 				   unsigned long p2, unsigned long p3,
 				   unsigned long p4, unsigned long p5);
 
-	if (guard_sig_precall(proc, host_call)) {
+	if (guard_sig_precall(proc, host_call, args)) {
 		return -EINVAL;
 	}
 	host_func = (void *)host_call->host_func;
 
-	rv = host_func(regs->x[0], regs->x[1], regs->x[2], regs->x[3],
-		       regs->x[4], regs->x[5]);
+	rv = host_func(args->x[0], args->x[1], args->x[2], args->x[3],
+		       args->x[4], args->x[5]);
 	return guard_sig_postcall(proc, host_call, rv);
 }
 
