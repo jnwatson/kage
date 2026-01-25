@@ -531,7 +531,7 @@ on_err:
 EXPORT_SYMBOL(kage_get_closure_over);
 
 #ifdef CONFIG_KUNIT
-void kage_prepare_kunit_suites(struct module *mod)
+static void prepare_kunit_suites(struct module *mod)
 {
 	if (!mod->kage || !mod->kunit_suites)
 		return;
@@ -551,7 +551,6 @@ void kage_prepare_kunit_suites(struct module *mod)
 		}
 	}
 }
-EXPORT_SYMBOL(kage_prepare_kunit_suites);
 #endif
 
 static int alloc_gvar_space(struct kage *kage) {
@@ -979,7 +978,7 @@ int kage_post_relocation(struct kage *kage, struct module *mod,
 		return err;
 
 #ifdef CONFIG_KUNIT
-	kage_prepare_kunit_suites(mod);
+	prepare_kunit_suites(mod);
 #endif
 
 	pr_info("%s finished with no error\n", __func__);

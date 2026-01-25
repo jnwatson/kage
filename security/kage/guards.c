@@ -8,8 +8,10 @@
 #include <linux/spinlock.h>
 #include <linux/slab.h>
 #include <linux/device.h>
+#ifdef CONFIG_KUNIT
 #include <kunit/test.h>
 #include <kunit/assert.h>
+#endif
 
 #include <linux/kage.h>
 
