@@ -113,7 +113,7 @@ lfi_asm_invoke:
 #endif
 	// set guest base x27 = proc->kage->base
 	ldr x16, [x0, #KAGE_PROC_KAGE_OFFS]
-	ldr x27, [x0, #KAGE_BASE_OFFS]
+	ldr x27, [x16, #KAGE_BASE_OFFS]
 
 	// Clear FP
 	mov x29, 0
