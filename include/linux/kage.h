@@ -116,9 +116,11 @@ unsigned long kage_symbol_value(struct kage *kage, const char *name,
 				const Elf_Ehdr *hdr, const Elf_Shdr *alt_shdr,
 				unsigned int sym_index);
 
-void *kage_unwrap_g2h_tramp(struct kage *kage, void *addr);
+void *kage_unwrap_g2h_tramp(struct kage *kage, unsigned long addr);
 
 kage_call_t kage_get_closure_over(struct kage *kage, unsigned long func);
+
+void guard_printf(struct kage *kage, const char *fmt, va_list args);
 
 #ifdef CONFIG_KUNIT
 void kage_prepare_kunit_suites(struct module *mod);

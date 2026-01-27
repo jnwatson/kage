@@ -344,6 +344,71 @@ lfi_g2h_entry_variadic:
 	ldr x22,      [x9, #80]
 	b lfi_restore_partial_regs
 
+.globl lfi_g2h_entry_override_variadic
+lfi_g2h_entry_override_variadic:
+/* Precondition: x17 == struct kage_g2h_call *. */
+	SAVE_PARTIAL_REGS // sets x27=proc, clobbers x16
+
+	// 1. Save guest registers immediately to the host kernel stack
+	ldr x16, [x27, KAGE_PROC_KSTACKP_OFFS]
+	sub x16, x16, #96 // space for x0-x7 (64) + x19-x22 (32)
+	stp x0, x1,   [x16, #0]
+	stp x2, x3,   [x16, #16]
+	stp x4, x5,   [x16, #32]
+	stp x6, x7,   [x16, #48]
+	stp x19, x20, [x16, #64]
+	stp x21, x22, [x16, #80]
+
+	mov x22, x16 // x22 = base of register save area
+	mov x21, x17 // x21 = call pointer
+	
+	// 2. Calculate guest stack usage
+	mov x1, sp    // guest sp
+	add x20, x1, #KAGE_GUEST_STACK_SIZE
+	and x20, x20, #~(KAGE_GUEST_STACK_SIZE-1)
+	sub x20, x20, x1
+	mov x15, #KAGE_MAX_STACK_ARGS_SIZE
+	cmp x20, x15
+	csel x20, x20, x15, lo
+
+	// 3. Allocate host stack for [x6, x7] and [stack args]
+	// Space needed: x20 (args) + 16 (x6,x7), 16-byte aligned
+	add x19, x20, #16
+	add x19, x19, #15
+	and x19, x19, #~15
+	sub sp, x22, x19
+
+	// 4. Copy Guest Stack Arguments
+	mov x0, sp
+	add x0, x0, #16 // dest (leave room for x6/x7 shadow)
+	// x1 is still guest sp
+	mov x2, x20
+	bl memcpy
+
+	// 5. Copy guest x6, x7 to the host stack shadow area
+	ldp x6, x7, [x22, #48]
+	stp x6, x7, [sp]
+
+#ifdef CONFIG_SHADOW_CALL_STACK
+	ldr x18, [x27, #KAGE_PROC_SSTACKP_OFFS]
+#endif
+
+	// 6. Call the override guard
+	// guard(proc, call, g_x0, g_x1, g_x2, g_x3, g_x4, g_x5, ...)
+	ldp x2, x3, [x22, #0]
+	ldp x4, x5, [x22, #16]
+	ldp x6, x7, [x22, #32]
+	mov x1, x21 // call
+	mov x0, x27 // proc
+	ldr x15, [x21, KAGE_G2H_CALL_GUARD_FUNC_OFFS]
+	blr x15
+
+	// 7. Restore and return
+	mov x17, x27
+	ldp x19, x20, [x22, #64]
+	ldp x21, x22, [x22, #80]
+	b lfi_restore_partial_regs
+
 /* This trampoline is used during module loading for alternatives patching.
  * It is mapped into guest but only called by the host.  It is destroyed
  * before the guest starts executing. */

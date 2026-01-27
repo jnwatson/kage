@@ -3,6 +3,7 @@
 
 extern void lfi_g2h_entry(void);
 extern void lfi_g2h_entry_override(void);
+extern void lfi_g2h_entry_override_variadic(void);
 extern void lfi_g2h_entry_variadic(void);
 extern void lfi_g2h_entry_variadic_end(void);
 extern void lfi_ret(void);

@@ -31,6 +31,9 @@
 #include "proc.h"
 #include "guards.h"
 
+// Nic tmp
+#pragma clang optimize off
+
 static_assert(offsetof(struct kage_proc, kstackp) == KAGE_PROC_KSTACKP_OFFS,
 	      "Inconsistency between proc.h and kage_asm.h");
 static_assert(offsetof(struct kage_proc, sstackp) == KAGE_PROC_SSTACKP_OFFS,
@@ -423,10 +426,9 @@ unsigned long kage_symbol_value(struct kage *kage, const char *name,
 	return ret;
 }
 
-void *kage_unwrap_g2h_tramp(struct kage *kage, void *addr)
+void *kage_unwrap_g2h_tramp(struct kage *kage, unsigned long addr)
 {
-	unsigned long offset = (unsigned long)addr -
-            (unsigned long)kage->g2h_tramp_text;
+	unsigned long offset = addr - (unsigned long)kage->g2h_tramp_text;
 
 	if (offset >= kage->num_g2h_calls * KAGE_G2H_TRAMP_SIZE)
 		return NULL;
@@ -544,6 +546,9 @@ static void prepare_kunit_suites(struct module *mod)
 		suite = mod->kunit_suites[i];
 		kunit_suite_for_each_test_case(suite, test_case) {
 			 void *guest_func = (void *)test_case->run_case;
+                         /* FIXME:  we need a custom call that wraps to
+                          * something that translates arguments and then calls
+                          * kage_call */
 			 void *tramp = kage_get_closure_over(mod->kage, (unsigned long)guest_func);
 			 if (!IS_ERR(tramp)) {
 				 test_case->run_case = tramp;

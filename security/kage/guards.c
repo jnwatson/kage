@@ -20,9 +20,6 @@
 #include "guards.h"
 #include "funcsig.h"
 
-// Nic tmp
-#pragma clang optimize off
-
 struct res_t{
 	struct kage *kage;
 	void * mem;
@@ -67,28 +64,56 @@ static void guard___kunit_do_failed_assertion(struct kage_proc *proc,
 	struct va_format message;
 	char const *fn = "__kunit_do_failed_assertion";
 
-	assert_format = kage_unwrap_g2h_tramp(proc->kage, oassert_format);
+	assert_format = kage_unwrap_g2h_tramp(proc->kage, (unsigned long)oassert_format);
         if (!assert_format) {
 		pr_err("kage: invalid param 5 in %s\n", fn);
 		return;
         }
 
+	// FIXME: otest should be in objstorage
 	if (in_guest(proc, otest)) {
 		pr_err("kage: invalid param 1 in %s\n", fn);
 		return;
 	}
 
+	if (!ofmt) {
+		__kunit_do_failed_assertion(otest, oloc, otype, oassert,
+					    assert_format, NULL);
+		return;
+	}
+
 	va_start(args, ofmt);
+	guard_printf(proc->kage, ofmt, args);
 
 	message.fmt = ofmt;
 	message.va = &args;
 	__kunit_do_failed_assertion(otest, oloc, otype, oassert,
 				    assert_format,
-				    "%pV", message);
+				    "%pV", &message);
 
 	va_end(args);
 }
 #endif
+
+static int guard_sprintf(struct kage_proc *proc,
+			 struct kage_g2h_call *call,
+			 char *buf, const char *fmt, ...)
+{
+	va_list args;
+	int rv;
+
+	if (buf && !in_guest(proc, buf))
+		return -1;
+	if (fmt && !in_guest(proc, fmt))
+		return -1;
+
+	va_start(args, fmt);
+	guard_printf(proc->kage, fmt, args);
+	rv = vsprintf(buf, fmt, args);
+	va_end(args);
+
+	return rv;
+}
 
 static void *guard_devm_kmalloc(struct kage_proc *proc,
 				struct kage_g2h_call * call, unsigned long odev,
@@ -283,15 +308,13 @@ struct kage_g2h_call g2h_call_overrides[] = {
 	NAME_TO_GUARD_ENTRY(devm_kmalloc),
 	NAME_TO_GUARD_ENTRY(kmalloc_trace),
 	NAME_TO_GUARD_ENTRY(kfree),
+	NAME_TO_GUARD_ENTRY(sprintf),
 #ifdef CONFIG_KUNIT
 	NAME_TO_GUARD_ENTRY(__kunit_do_failed_assertion)
 #endif
 };
 
 void kage_guards_init(void) {
-	for (int i = 0; i < ARRAY_SIZE(g2h_call_overrides); i++)
-		g2h_call_overrides[i].stub =
-				(unsigned long)lfi_g2h_entry_override;
 }
 
 static struct kage_g2h_call *find_g2h_call_override(const char *name)
@@ -327,14 +350,20 @@ struct kage_g2h_call *kage_guard_create_g2h_call(const char *name,
 		return ERR_PTR(-ENOKEY);
 	}
 
-	if (over_call)
-		return call;
-
 	// Check if the last argument is variadic
 	struct kage_argspec *last_arg = call->spec;
 	while (last_arg->kind != KAGE_ARG_END)
 		last_arg++;
 	last_arg--; // Go back to the last real argument
+
+	if (over_call) {
+		if (last_arg->kind == KAGE_ARG_VARIADIC) {
+			call->stub = (unsigned long)lfi_g2h_entry_override_variadic;
+		} else {
+			call->stub = (unsigned long)lfi_g2h_entry_override;
+		}
+		return call;
+	}
 
 	if (last_arg->kind == KAGE_ARG_VARIADIC) {
 		call->guard_func = (unsigned long)guard_sig_precall;
