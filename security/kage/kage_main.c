@@ -321,7 +321,9 @@ static void fill_trampolines(struct kage *kage)
 
 	// Fill lfi_setup_kage_call literal pool
 	*(unsigned long *)(tramp_loc + KAGE_H2G_TRAMP_REGION_SIZE) =
-			(unsigned long)kage_call;
+			(unsigned long)kage_call_with_spec;
+	*(unsigned long *)(tramp_loc + KAGE_H2G_TRAMP_REGION_SIZE + 8) =
+			(unsigned long)kage;
 
 	BUG_ON(tramp_loc + KAGE_SETUP_KAGE_CALL_SIZE -
 	       (unsigned long)kage->h2g_tramp_text >
@@ -491,6 +493,14 @@ static const struct assoc_array_ops kage_h2g_closure_ops = {
 /* Returns a function pointer that calls kage_call(kage, func) */
 kage_call_t kage_get_closure_over(struct kage *kage, unsigned long func)
 {
+	return kage_get_closure_over_with_spec(kage, func, NULL);
+}
+EXPORT_SYMBOL(kage_get_closure_over);
+
+/* Returns a function pointer that calls kage_call_with_spec(kage, func, spec) */
+kage_call_t kage_get_closure_over_with_spec(struct kage *kage, unsigned long func,
+					   struct kage_argspec *spec)
+{
 	unsigned long irq_flags;
 	struct assoc_array_edit *edit;
 	void *tramp;
@@ -512,8 +522,8 @@ kage_call_t kage_get_closure_over(struct kage *kage, unsigned long func)
 		goto on_err;
 	}
 
-	entry->kage = kage;
 	entry->guest_func = func;
+	entry->spec = spec;
 
 	// Each trampoline is exactly region size away from its literal pool
 	tramp = (void *)((u64)entry - KAGE_H2G_TRAMP_REGION_SIZE);
@@ -530,9 +540,20 @@ on_err:
 	spin_unlock_irqrestore(&kage->lock, irq_flags);
 	return tramp;
 }
-EXPORT_SYMBOL(kage_get_closure_over);
+EXPORT_SYMBOL(kage_get_closure_over_with_spec);
+
+u32 kage_kunit_type_id;
+EXPORT_SYMBOL(kage_kunit_type_id);
+
+static struct kage_argspec kunit_run_case_spec[] = {
+	{ .kind = KAGE_ARG_VOID },
+	{ .kind = KAGE_ARG_PSTRUCT, .spec.obj_type_id = 0 },
+	{ .kind = KAGE_ARG_END }
+};
 
 #ifdef CONFIG_KUNIT
+#include "funcsig.h"
+
 static void prepare_kunit_suites(struct module *mod)
 {
 	if (!mod->kage || !mod->kunit_suites)
@@ -542,17 +563,25 @@ static void prepare_kunit_suites(struct module *mod)
 	struct kunit_suite *suite;
 	struct kunit_case *test_case;
 
+	if (kage_kunit_type_id == 0) {
+		struct kage_argspec *s = kage_get_funcspec("__kunit_do_failed_assertion");
+		if (s) {
+			kage_kunit_type_id = s[1].spec.obj_type_id;
+			kunit_run_case_spec[1].spec.obj_type_id = kage_kunit_type_id;
+			kfree(s);
+		}
+	}
+
 	for (i = 0; i < mod->num_kunit_suites; i++) {
 		suite = mod->kunit_suites[i];
 		kunit_suite_for_each_test_case(suite, test_case) {
-			 void *guest_func = (void *)test_case->run_case;
-                         /* FIXME:  we need a custom call that wraps to
-                          * something that translates arguments and then calls
-                          * kage_call */
-			 void *tramp = kage_get_closure_over(mod->kage, (unsigned long)guest_func);
-			 if (!IS_ERR(tramp)) {
-				 test_case->run_case = tramp;
-			 }
+			unsigned long addr = (unsigned long)test_case->run_case;
+			void *tramp = kage_get_closure_over_with_spec(mod->kage, addr, kunit_run_case_spec);
+                        if (IS_ERR(tramp)) {
+				pr_err(MODULE_NAME ": failure allocating closure: %pe\n", tramp);
+				break;
+                        };
+			test_case->run_case = tramp;
 		}
 	}
 }
@@ -1037,6 +1066,39 @@ static void * guest_scs_alloc(struct kage *kage)
 	return NULL;
 #endif
 }
+
+// Translates arguments according to spec and calls kage_call
+unsigned long kage_call_with_spec(struct kage *kage, void *fn,
+				  struct kage_argspec *spec,
+				  unsigned long p0, unsigned long p1,
+				  unsigned long p2, unsigned long p3,
+				  unsigned long p4, unsigned long p5)
+{
+	unsigned long args[6] = {p0, p1, p2, p3, p4, p5};
+	struct kage_argspec *s = spec;
+	int i;
+
+	if (!s)
+		goto call;
+
+	// Skip return type
+	s++;
+
+	for (i = 0; i < 6 && s->kind != KAGE_ARG_END; i++, s++) {
+		if (s->kind == KAGE_ARG_PSTRUCT) {
+			unsigned long val = args[i];
+			if (!val || ((val - kage->base) < KAGE_GUEST_SIZE))
+				continue;
+
+			// Host pointer passed to guest; marshal via objstorage
+			args[i] = kage_objstorage_alloc(kage, true, s->spec.obj_type_id, (void *)val);
+		}
+	}
+
+call:
+	return kage_call(kage, fn, args[0], args[1], args[2], args[3], args[4], args[5]);
+}
+EXPORT_SYMBOL(kage_call_with_spec);
 
 // Invoke a function call into the guest
 unsigned long kage_call(struct kage *kage, void * fn,

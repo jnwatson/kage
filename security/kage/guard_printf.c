@@ -32,8 +32,8 @@ static void **get_next_va_slot(kage_va_list *ap)
 	return ptr;
 }
 
-/* Guards a printf-fmt varargs. Replaces all out-of-guest pointers with NULL. */
-void guard_printf(struct kage *kage, const char *fmt, va_list args)
+/* Guards a printf-fmt variadic function. Replaces all out-of-guest pointers with NULL. */
+void guard_printf(const struct kage *kage, const char *fmt, va_list args)
 {
 	kage_va_list *ap;
 	va_list args_copy;

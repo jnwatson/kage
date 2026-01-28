@@ -29,8 +29,8 @@ struct kage_objstorage {
 
 // The literal pool entry for a single host-to-guest trampoline
 struct kage_h2g_tramp_data_entry {
-	struct kage *kage;
 	u64 guest_func; // callback into guest
+	struct kage_argspec *spec;
 };
 
 // A guest imported variable
@@ -106,6 +106,12 @@ unsigned long kage_call(struct kage *kage, void * fn, unsigned long p0,
 			unsigned long p1, unsigned long p2, unsigned long p3,
 			unsigned long p4, unsigned long p5);
 
+unsigned long kage_call_with_spec(struct kage *kage, void *fn,
+				  struct kage_argspec *spec,
+				  unsigned long p0, unsigned long p1,
+				  unsigned long p2, unsigned long p3,
+				  unsigned long p4, unsigned long p5);
+
 typedef
 unsigned long (*kage_call_t)(struct kage *kage, void * fn, unsigned long p0,
 			unsigned long p1, unsigned long p2, unsigned long p3,
@@ -119,8 +125,10 @@ unsigned long kage_symbol_value(struct kage *kage, const char *name,
 void *kage_unwrap_g2h_tramp(struct kage *kage, unsigned long addr);
 
 kage_call_t kage_get_closure_over(struct kage *kage, unsigned long func);
+kage_call_t kage_get_closure_over_with_spec(struct kage *kage, unsigned long func,
+					   struct kage_argspec *spec);
 
-void guard_printf(struct kage *kage, const char *fmt, va_list args);
+void guard_printf(const struct kage *kage, const char *fmt, va_list args);
 
 #ifdef CONFIG_KUNIT
 void kage_prepare_kunit_suites(struct module *mod);

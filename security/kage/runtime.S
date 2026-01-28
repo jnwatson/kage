@@ -156,8 +156,8 @@ lfi_g2h_trampoline_end:
 .p2align 4
 .globl lfi_h2g_trampoline
 lfi_h2g_trampoline:
-	 ldr     x17, . + (KAGE_H2G_TRAMP_REGION_SIZE)
-	 ldr     x16, . + (KAGE_H2G_TRAMP_REGION_SIZE) + 4
+	 ldr     x17, . + (KAGE_H2G_TRAMP_REGION_SIZE)      // guest_func at POOL+0
+	 ldr     x16, . + (KAGE_H2G_TRAMP_REGION_SIZE) + 4  // spec at POOL+8
 /* This instruction gets patched to branch to lfi_setup_kage_call */
 	 brk     #0
 	 brk     #0
@@ -170,15 +170,16 @@ lfi_h2g_trampoline_end:
 .p2align 7
 .globl lfi_setup_kage_call
 lfi_setup_kage_call:
-	// Shift two registers to the right for kage * and fn params
-	mov x7, x5
-	mov x6, x4
-	mov x5, x3
-	mov x4, x2
-	mov x3, x1
-	mov x2, x0
-	mov x1, x16
-	mov x0, x17
+	// Shift parameters right by 3 to make room for (kage, fn, spec)
+	mov x7, x4
+	mov x6, x3
+	mov x5, x2
+	mov x4, x1
+	mov x3, x0
+	mov x2, x16 // spec
+	mov x1, x17 // guest fn
+	// Load kage (at SETUP_POOL + 8) and handler (at SETUP_POOL + 0)
+	ldr x0,  . + (KAGE_H2G_TRAMP_REGION_SIZE) - 20
 	ldr x16, . + (KAGE_H2G_TRAMP_REGION_SIZE) - 32
 	br x16
 .p2align 4

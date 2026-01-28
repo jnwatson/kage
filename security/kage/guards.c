@@ -49,20 +49,29 @@ static void guard_kfree(struct kage_proc *proc,
 	kage_memory_free(proc->kage, object);
 }
 
+extern u32 kage_kunit_type_id;
+
 #ifdef CONFIG_KUNIT
 static void guard___kunit_do_failed_assertion(struct kage_proc *proc,
 			       struct kage_g2h_call * call,
-			       struct kunit *otest,
+			       unsigned long otest_desc,
 			       const struct kunit_loc *oloc,
 			       enum kunit_assert_type otype,
 			       const struct kunit_assert *oassert,
 			       assert_format_t oassert_format,
 			       const char *ofmt, ...)
 {
+	struct kunit *test;
 	assert_format_t assert_format;
 	va_list args;
 	struct va_format message;
 	char const *fn = "__kunit_do_failed_assertion";
+
+	test = kage_obj_get(proc->kage, otest_desc, kage_kunit_type_id);
+	if (!test) {
+		pr_err("kage: invalid kunit descriptor in %s\n", fn);
+		return;
+	}
 
 	assert_format = kage_unwrap_g2h_tramp(proc->kage, (unsigned long)oassert_format);
         if (!assert_format) {
@@ -70,14 +79,8 @@ static void guard___kunit_do_failed_assertion(struct kage_proc *proc,
 		return;
         }
 
-	// FIXME: otest should be in objstorage
-	if (in_guest(proc, otest)) {
-		pr_err("kage: invalid param 1 in %s\n", fn);
-		return;
-	}
-
 	if (!ofmt) {
-		__kunit_do_failed_assertion(otest, oloc, otype, oassert,
+		__kunit_do_failed_assertion(test, oloc, otype, oassert,
 					    assert_format, NULL);
 		return;
 	}
@@ -87,7 +90,7 @@ static void guard___kunit_do_failed_assertion(struct kage_proc *proc,
 
 	message.fmt = ofmt;
 	message.va = &args;
-	__kunit_do_failed_assertion(otest, oloc, otype, oassert,
+	__kunit_do_failed_assertion(test, oloc, otype, oassert,
 				    assert_format,
 				    "%pV", &message);
 
