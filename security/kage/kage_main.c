@@ -547,7 +547,7 @@ EXPORT_SYMBOL(kage_kunit_type_id);
 
 static struct kage_argspec kunit_run_case_spec[] = {
 	{ .kind = KAGE_ARG_VOID },
-	{ .kind = KAGE_ARG_PSTRUCT, .spec.obj_type_id = 0 },
+	{ .kind = KAGE_ARG_PSTRUCT, .type_id = 0 },
 	{ .kind = KAGE_ARG_END }
 };
 
@@ -566,9 +566,9 @@ static void prepare_kunit_suites(struct module *mod)
 	if (kage_kunit_type_id == 0) {
 		struct kage_argspec *s = kage_get_funcspec("__kunit_do_failed_assertion");
 		if (s) {
-			kage_kunit_type_id = s[1].spec.obj_type_id;
-			kunit_run_case_spec[1].spec.obj_type_id = kage_kunit_type_id;
-			kfree(s);
+			kage_kunit_type_id = s[1].type_id;
+			kunit_run_case_spec[1].type_id = kage_kunit_type_id;
+			kage_free_argspec(s);
 		}
 	}
 
@@ -729,11 +729,11 @@ static int kage_objstorage_init(struct kage_objstorage **storage_ptr)
 	return 0;
 }
 
-void *kage_obj_get(struct kage *kage, u64 descriptor, u16 type)
+void *kage_obj_get(struct kage *kage, u64 descriptor, u32 type)
 {
 	u8 owner = kage_unpack_objdescriptor_owner(descriptor);
 	u16 objindex = kage_unpack_objdescriptor_objindex(descriptor);
-	u16 obj_type = kage_unpack_objdescriptor_type(descriptor);
+	u32 obj_type = kage_unpack_objdescriptor_type(descriptor);
 	struct kage_objstorage *storage;
 	//pr_info("%s: try %llx(%x, %4u(=?%4u), %x)\n", __func__,
 	//	descriptor, owner, obj_type, type, objindex);
@@ -777,7 +777,7 @@ void kage_obj_set(struct kage *kage, u64 descriptor, void *obj)
 		storage = kage->objstorage;
 
 	rcu_assign_pointer(storage->objs[objindex], obj);
-	u16 obj_type = kage_unpack_objdescriptor_type(descriptor);
+	u32 obj_type = kage_unpack_objdescriptor_type(descriptor);
 	pr_debug("%s: %llx(%x, %4u, %x) -> 0x%px\n", __func__,
 		descriptor, owner, obj_type, objindex, obj);
 }
@@ -788,7 +788,7 @@ void kage_obj_delete(struct kage *kage, u64 descriptor)
 }
 
 u64 kage_objstorage_alloc(struct kage *kage, bool is_global,
-			  u16 type,
+			  u32 type,
 			  void * obj)
 {
 	struct kage_objstorage *storage;
@@ -1091,7 +1091,7 @@ unsigned long kage_call_with_spec(struct kage *kage, void *fn,
 				continue;
 
 			// Host pointer passed to guest; marshal via objstorage
-			args[i] = kage_objstorage_alloc(kage, true, s->spec.obj_type_id, (void *)val);
+			args[i] = kage_objstorage_alloc(kage, true, s->type_id, (void *)val);
 		}
 	}
 

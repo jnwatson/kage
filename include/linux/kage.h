@@ -134,8 +134,8 @@ void guard_printf(const struct kage *kage, const char *fmt, va_list args);
 void kage_prepare_kunit_suites(struct module *mod);
 #endif
 
-void *kage_obj_get(struct kage *kage, u64 descriptor, u16 type);
-u64 kage_objstorage_alloc(struct kage *kage, bool is_global, u16 type,
+void *kage_obj_get(struct kage *kage, u64 descriptor, u32 type);
+u64 kage_objstorage_alloc(struct kage *kage, bool is_global, u32 type,
 			  void * obj);
 
 #endif /* _LINUX_KAGE_H */

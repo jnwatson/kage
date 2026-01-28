@@ -15,12 +15,15 @@ enum kage_arg_kind {
 
 struct kage_argspec {
 	enum kage_arg_kind kind;
+	u32 type_id;
 	union {
-		u16 obj_type_id;
+		struct kage_argspec *func_spec;
 		u8 int_size;
 	} spec;
 };
 
 struct kage_argspec *kage_get_funcspec(const char *func_name);
+struct kage_argspec *kage_get_funcptr_argspec(struct kage_argspec *spec);
+void kage_free_argspec(struct kage_argspec *specs);
 
 #endif /* _KAGE_FUNCSIG_H */

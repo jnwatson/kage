@@ -123,7 +123,7 @@ static void *guard_devm_kmalloc(struct kage_proc *proc,
 				size_t size, gfp_t gfp)
 {
 	BUG_ON((call->spec[1].kind) != KAGE_ARG_PSTRUCT);
-	u16 dev_type_id = call->spec[1].spec.obj_type_id;
+	u32 dev_type_id = call->spec[1].type_id;
 
 	if (unlikely(!size))
 		return ZERO_SIZE_PTR; // FIXME
@@ -193,7 +193,8 @@ static int guard_sig_precall(struct kage_proc *proc,
 			}
 			break;
 		case KAGE_ARG_FUNC_PTR: {
-			void *closure = kage_get_closure_over(proc->kage, val);
+			struct kage_argspec *callback_spec = kage_get_funcptr_argspec(spec);
+			void *closure = kage_get_closure_over_with_spec(proc->kage, val, callback_spec);
 			if (IS_ERR(closure))
 				return PTR_ERR(closure);
 			pr_info("closure_over created at 0x%px for guest func "
@@ -209,7 +210,7 @@ static int guard_sig_precall(struct kage_proc *proc,
 			if (in_guest(proc, (void *)val))
 				break;
 			void *obj = kage_obj_get(proc->kage, val,
-						 spec->spec.obj_type_id);
+						 spec->type_id);
 			if (!obj) {
 				pr_err(MODULE_NAME
 				       ": invalid struct ptr in arg %d in call "
@@ -255,11 +256,11 @@ unsigned long guard_sig_postcall(struct kage_proc *proc,
 		if (IS_ERR_OR_NULL((void *)rv))
 			return rv;
 		void *obj =
-			kage_obj_get(proc->kage, rv, spec->spec.obj_type_id);
+			kage_obj_get(proc->kage, rv, spec->type_id);
 
 		if (!obj) {
 			u64 desc = kage_objstorage_alloc(proc->kage, true,
-							 spec->spec.obj_type_id,
+							 spec->type_id,
 							 (void *)rv);
 			if (!desc) {
 				return -1;
@@ -452,6 +453,6 @@ void kage_guard_destroy_g2h_call(struct kage_g2h_call *call)
 {
 	if (!call)
 		return;
-	kfree(call->spec);
+	kage_free_argspec(call->spec);
 	kfree(call);
 }
