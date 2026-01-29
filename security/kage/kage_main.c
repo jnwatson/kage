@@ -729,14 +729,26 @@ static int kage_objstorage_init(struct kage_objstorage **storage_ptr)
 	return 0;
 }
 
+static struct kobject *kobject_from_obj(void *obj, u16 offset)
+{
+	if (!obj || !offset)
+		return NULL;
+	return (struct kobject *)((char *)obj + offset - 1);
+}
+
+static struct kobject *kobject_from_entry(struct kage_obj_entry *entry, void *obj)
+{
+	return kobject_from_obj(obj, entry->kobj_offset);
+}
+
 void *kage_obj_get(struct kage *kage, u64 descriptor, u32 type)
 {
 	u8 owner = kage_unpack_objdescriptor_owner(descriptor);
 	u16 objindex = kage_unpack_objdescriptor_objindex(descriptor);
 	u32 obj_type = kage_unpack_objdescriptor_type(descriptor);
 	struct kage_objstorage *storage;
-	//pr_info("%s: try %llx(%x, %4u(=?%4u), %x)\n", __func__,
-	//	descriptor, owner, obj_type, type, objindex);
+	struct kage_obj_entry *entry;
+	void *obj;
 
 	// Pass-through NULLs; sometimes that's OK
         if (!descriptor)
@@ -756,11 +768,21 @@ void *kage_obj_get(struct kage *kage, u64 descriptor, u32 type)
 	else
 		storage = kage->objstorage;
 
-	void * rv = rcu_dereference(storage->objs[objindex]);
-	pr_debug("%s: %llx(%x, %4u, %x) -> 0x%p\n", __func__,
-		descriptor, owner, obj_type, objindex, rv);
+	entry = &storage->entries[objindex];
+	obj = rcu_dereference(entry->obj);
 
-	return rv;
+	struct kobject *kobj = kobject_from_entry(entry, obj);
+	if (kobj) {
+		if (kref_read(&kobj->kref) == 1) {
+			pr_debug("%s: handle %llx is dead (refcount 1)\n", __func__, descriptor);
+			return NULL;
+		}
+	}
+
+	pr_debug("%s: %llx(%x, %4u, %x) -> 0x%p\n", __func__,
+		descriptor, owner, obj_type, objindex, obj);
+
+	return obj;
 }
 
 void kage_obj_set(struct kage *kage, u64 descriptor, void *obj)
@@ -776,7 +798,7 @@ void kage_obj_set(struct kage *kage, u64 descriptor, void *obj)
 	else
 		storage = kage->objstorage;
 
-	rcu_assign_pointer(storage->objs[objindex], obj);
+	rcu_assign_pointer(storage->entries[objindex].obj, obj);
 	u32 obj_type = kage_unpack_objdescriptor_type(descriptor);
 	pr_debug("%s: %llx(%x, %4u, %x) -> 0x%px\n", __func__,
 		descriptor, owner, obj_type, objindex, obj);
@@ -784,11 +806,35 @@ void kage_obj_set(struct kage *kage, u64 descriptor, void *obj)
 
 void kage_obj_delete(struct kage *kage, u64 descriptor)
 {
-	kage_obj_set(kage, descriptor, NULL);
+	u8 owner = kage_unpack_objdescriptor_owner(descriptor);
+	u16 objindex = kage_unpack_objdescriptor_objindex(descriptor);
+	struct kage_objstorage *storage;
+	struct kage_obj_entry *entry;
+	unsigned long flags;
+	void *obj;
+
+	if (owner == KAGE_OWNER_GLOBAL)
+		storage = kage_global_objstorage;
+	else
+		storage = kage->objstorage;
+
+	spin_lock_irqsave(&storage->lock, flags);
+	entry = &storage->entries[objindex];
+	obj = rcu_dereference_protected(entry->obj,
+					lockdep_is_held(&storage->lock));
+
+	struct kobject *kobj = kobject_from_entry(entry, obj);
+	if (kobj) {
+		kobject_put(kobj);
+	}
+
+	entry->kobj_offset = 0;
+	rcu_assign_pointer(entry->obj, NULL);
+	spin_unlock_irqrestore(&storage->lock, flags);
 }
 
 u64 kage_objstorage_alloc(struct kage *kage, bool is_global,
-			  u32 type,
+			  u32 type, u16 kobj_offset,
 			  void * obj)
 {
 	struct kage_objstorage *storage;
@@ -808,13 +854,21 @@ u64 kage_objstorage_alloc(struct kage *kage, bool is_global,
 
 	spin_lock_irqsave(&storage->lock, flags);
 
-	for (i = 0; i <= ARRAY_SIZE(kage->objstorage->objs); i++) {
-		unsigned int slot = (storage->next_slot + i) % (KAGE_MAX_OBJ_INDEX + 1);
+	for (i = 0; i < ARRAY_SIZE(storage->entries); i++) {
+		unsigned int slot = (storage->next_slot + i) % ARRAY_SIZE(storage->entries);
+		struct kage_obj_entry *entry = &storage->entries[slot];
 
-		if (!rcu_dereference_protected(storage->objs[slot],
+		if (!rcu_dereference_protected(entry->obj,
 					       lockdep_is_held(&storage->lock))) {
-			storage->next_slot = slot + 1;
+			storage->next_slot = (slot + 1) % ARRAY_SIZE(storage->entries);
 			u64 desc = kage_pack_objdescriptor(type, is_global, slot);
+
+			struct kobject *kobj = kobject_from_obj(obj, kobj_offset);
+			if (kobj) {
+				kobject_get(kobj);
+			}
+
+			entry->kobj_offset = kobj_offset;
 			kage_obj_set(kage, desc, obj);
 			ret = desc;
 			break;
@@ -1091,7 +1145,7 @@ unsigned long kage_call_with_spec(struct kage *kage, void *fn,
 				continue;
 
 			// Host pointer passed to guest; marshal via objstorage
-			args[i] = kage_objstorage_alloc(kage, true, s->type_id, (void *)val);
+			args[i] = kage_objstorage_alloc(kage, true, s->type_id, s->kobj_offset, (void *)val);
 		}
 	}
 
@@ -1179,6 +1233,25 @@ cleanup:
 	return rv;
 }
 
+static void kage_objstorage_destroy(struct kage_objstorage *storage)
+{
+	int i;
+
+	if (!storage)
+		return;
+
+	for (i = 0; i < ARRAY_SIZE(storage->entries); i++) {
+		struct kage_obj_entry *entry = &storage->entries[i];
+		void *obj = entry->obj;
+
+		struct kobject *kobj = kobject_from_entry(entry, obj);
+		if (kobj) {
+			kobject_put(kobj);
+		}
+	}
+	kfree(storage);
+}
+
 void kage_destroy(struct kage *kage)
 {
 	int i;
@@ -1197,7 +1270,7 @@ void kage_destroy(struct kage *kage)
 	if (kage->alloc_bitmap)
 		kage_memory_free_all(kage);
 
-	kfree(kage->objstorage);
+	kage_objstorage_destroy(kage->objstorage);
 
 	bitmap_free(kage->alloc_bitmap);
 
@@ -1222,7 +1295,7 @@ static void __exit kagemodule_exit(void)
 
 		kage_destroy(kage);
 	}
-	kfree(kage_global_objstorage);
+	kage_objstorage_destroy(kage_global_objstorage);
 	vfree(vm_area);
 }
 

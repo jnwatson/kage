@@ -16,6 +16,7 @@ enum kage_arg_kind {
 struct kage_argspec {
 	enum kage_arg_kind kind;
 	u32 type_id;
+	u16 kobj_offset; // offset + 1, 0 means none
 	union {
 		struct kage_argspec *func_spec;
 		u8 int_size;

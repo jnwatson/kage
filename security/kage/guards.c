@@ -98,6 +98,38 @@ static void guard___kunit_do_failed_assertion(struct kage_proc *proc,
 }
 #endif
 
+static void guard_device_unregister(struct kage_proc *proc,
+				    struct kage_g2h_call *call,
+				    unsigned long odev_desc)
+{
+	u32 dev_type_id = call->spec[1].type_id;
+	struct device *dev = kage_obj_get(proc->kage, odev_desc, dev_type_id);
+
+	if (!dev) {
+		pr_err("kage: invalid device descriptor in device_unregister\n");
+		return;
+	}
+
+	device_unregister(dev);
+	kage_obj_delete(proc->kage, odev_desc);
+}
+
+static void guard_device_del(struct kage_proc *proc,
+			     struct kage_g2h_call *call,
+			     unsigned long odev_desc)
+{
+	u32 dev_type_id = call->spec[1].type_id;
+	struct device *dev = kage_obj_get(proc->kage, odev_desc, dev_type_id);
+
+	if (!dev) {
+		pr_err("kage: invalid device descriptor in device_del\n");
+		return;
+	}
+
+	device_del(dev);
+	kage_obj_delete(proc->kage, odev_desc);
+}
+
 static int guard_sprintf(struct kage_proc *proc,
 			 struct kage_g2h_call *call,
 			 char *buf, const char *fmt, ...)
@@ -261,6 +293,7 @@ unsigned long guard_sig_postcall(struct kage_proc *proc,
 		if (!obj) {
 			u64 desc = kage_objstorage_alloc(proc->kage, true,
 							 spec->type_id,
+							 spec->kobj_offset,
 							 (void *)rv);
 			if (!desc) {
 				return -1;
@@ -309,6 +342,8 @@ unsigned long guard_sig(struct kage_proc *proc, struct kage_g2h_call *host_call,
  * it is a kmalloc variant)
  * NOTE: this array must be sorted by name (so bsearch works) */
 struct kage_g2h_call g2h_call_overrides[] = {
+	NAME_TO_GUARD_ENTRY(device_del),
+	NAME_TO_GUARD_ENTRY(device_unregister),
 	NAME_TO_GUARD_ENTRY(devm_kmalloc),
 	NAME_TO_GUARD_ENTRY(kmalloc_trace),
 	NAME_TO_GUARD_ENTRY(kfree),

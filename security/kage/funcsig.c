@@ -21,6 +21,40 @@ static u32 resolve_type_id(const struct btf *btf, u32 type_id,
 	return type_id;
 }
 
+static u32 find_kobject_offset_recursive(const struct btf *btf, u32 type_id)
+{
+	const struct btf_type *t = btf_type_by_id(btf, type_id);
+	const struct btf_member *m;
+	u32 i;
+
+	if (!btf_type_is_struct(t))
+		return (u32)-1;
+
+	const char *name = btf_name_by_offset(btf, t->name_off);
+	if (name && !strcmp(name, "kobject"))
+		return 0;
+
+	for (i = 0, m = btf_members(t); i < btf_vlen(t); i++, m++) {
+		const struct btf_type *mtype;
+		u32 mtype_id = resolve_type_id(btf, m->type, &mtype);
+		u32 sub_off = find_kobject_offset_recursive(btf, mtype_id);
+
+		if (sub_off != (u32)-1)
+			return (m->offset / 8) + sub_off;
+	}
+	return (u32)-1;
+}
+
+static u16 find_kobject_offset(const struct btf *btf, u32 type_id)
+{
+	u32 off = find_kobject_offset_recursive(btf, type_id);
+
+	if (off == (u32)-1 || off >= 0xFFFF)
+		return 0;
+
+	return (u16)off + 1;
+}
+
 /**
  * resolve_type() - Convert a BTF type ID into a kage_argspec.
  * @btf: The BTF blob for the kernel or module.
@@ -36,7 +70,7 @@ static u32 resolve_type_id(const struct btf *btf, u32 type_id,
 static bool resolve_type(const struct btf *btf, __u32 type_id,
 			 const char *name, struct kage_argspec *spec);
 
-static struct kage_argspec *__kage_get_funcspec_from_proto(const struct btf *btf, u32 proto_id);
+static struct kage_argspec *get_funcspec_from_proto_btf(const struct btf *btf, u32 proto_id);
 
 static bool resolve_type(const struct btf *btf, __u32 type_id,
 			 const char *name, struct kage_argspec *spec)
@@ -65,10 +99,11 @@ static bool resolve_type(const struct btf *btf, __u32 type_id,
 		if (btf_type_is_func_proto(target_t)) {
 			spec->kind = KAGE_ARG_FUNC_PTR;
 			spec->type_id = target_id;
-			spec->spec.func_spec = __kage_get_funcspec_from_proto(btf, target_id);
+			spec->spec.func_spec = get_funcspec_from_proto_btf(btf, target_id);
 		} else if (target_kind == BTF_KIND_STRUCT) {
 			spec->kind = KAGE_ARG_PSTRUCT;
 			spec->type_id = target_id;
+			spec->kobj_offset = find_kobject_offset(btf, target_id);
 		} else if (target_kind == BTF_KIND_UNION) {
 			pr_warn("kage: pointers to unions are not supported types\n");
 			return false;
@@ -91,7 +126,7 @@ static bool resolve_type(const struct btf *btf, __u32 type_id,
 	return true;
 }
 
-static struct kage_argspec *__kage_get_funcspec_from_proto(const struct btf *btf, u32 proto_id)
+static struct kage_argspec *get_funcspec_from_proto_btf(const struct btf *btf, u32 proto_id)
 {
 	const struct btf_type *proto_t = btf_type_by_id(btf, proto_id);
 	struct kage_argspec *specs = NULL;
@@ -176,7 +211,7 @@ struct kage_argspec *kage_get_funcspec(const char *func_name)
 	}
 
 	func_t = btf_type_by_id(btf, func_id);
-	return __kage_get_funcspec_from_proto(btf, func_t->type);
+	return get_funcspec_from_proto_btf(btf, func_t->type);
 }
 
 void kage_free_argspec(struct kage_argspec *specs)

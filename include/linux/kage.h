@@ -21,8 +21,13 @@
 #define KAGE_MAX_GVARS 16
 struct kage;
 
+struct kage_obj_entry {
+	void __rcu *obj;
+	u16 kobj_offset; // offset + 1, 0 means none
+};
+
 struct kage_objstorage {
-	void __rcu *objs[KAGE_MAX_OBJ_INDEX + 1];
+	struct kage_obj_entry entries[KAGE_MAX_OBJ_INDEX + 1];
 	spinlock_t lock;
 	unsigned int next_slot;
 };
@@ -135,7 +140,8 @@ void kage_prepare_kunit_suites(struct module *mod);
 #endif
 
 void *kage_obj_get(struct kage *kage, u64 descriptor, u32 type);
+void kage_obj_delete(struct kage *kage, u64 descriptor);
 u64 kage_objstorage_alloc(struct kage *kage, bool is_global, u32 type,
-			  void * obj);
+			  u16 kobj_offset, void * obj);
 
 #endif /* _LINUX_KAGE_H */
