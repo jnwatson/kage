@@ -2612,10 +2612,12 @@ static int post_relocation(struct module *mod, const struct load_info *info)
 	/* Setup kallsyms-specific fields. */
 	add_kallsyms(mod, info);
 
-	// FIXME: LFI verification here
 #ifdef CONFIG_SECURITY_KAGE
 	if (info->is_lfi) {
-		int err = post_relocation_kage(mod, info);
+		int err = kage_verify_module(info->hdr, info->len, mod->name);
+		if (err < 0)
+			return err;
+		err = post_relocation_kage(mod, info);
 		if (err < 0)
 			return err;
 	}

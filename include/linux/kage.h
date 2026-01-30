@@ -144,4 +144,6 @@ void kage_obj_delete(struct kage *kage, u64 descriptor);
 u64 kage_objstorage_alloc(struct kage *kage, bool is_global, u32 type,
 			  u16 kobj_offset, void * obj);
 
+int kage_verify_module(const void *buf, size_t len, const char *name);
+
 #endif /* _LINUX_KAGE_H */
