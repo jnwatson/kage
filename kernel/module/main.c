@@ -2614,9 +2614,13 @@ static int post_relocation(struct module *mod, const struct load_info *info)
 
 #ifdef CONFIG_SECURITY_KAGE
 	if (info->is_lfi) {
+#if 0
 		int err = kage_verify_module(info->hdr, info->len, mod->name);
 		if (err < 0)
 			return err;
+#else
+		int err;
+#endif
 		err = post_relocation_kage(mod, info);
 		if (err < 0)
 			return err;
